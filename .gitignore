@@ -1,0 +1,7 @@
+# Ignore the .venv folder
+Python/.venv/
+
+# Ignore all files in the Data folder except .gitkeep files
+Data/**
+!Data/**/
+!Data/**/.gitkeep

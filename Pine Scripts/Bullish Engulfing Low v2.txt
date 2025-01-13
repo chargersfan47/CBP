@@ -1,0 +1,44 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// Originally by syndotc, modified by The_Dennish
+//@version=6
+indicator("Bullish Engulfing Low", overlay=true)
+
+//// Check if the previous candle is bullish
+isBullish = close > open
+
+// Check if the current candle is bearish
+isPreviousBearish = close[1] < open[1]
+
+// Additional conditions
+// isEngulfing = close < open[1] and high > high[1]
+isEngulfing = close > open[1] and low > low[1]
+
+// Detect bearish engulfing pattern
+isBearishEngulfing = isBullish and isPreviousBearish and isEngulfing
+
+// Plot horizontal line at the highest point of the engulfing candle
+var line[] engulfingLines = array.new_line()
+
+// Function to update line colors
+updateLineColors() =>
+    for lineId in engulfingLines
+        linePrice = line.get_y1(lineId)
+        if close > linePrice
+            line.set_color(lineId, color.green)
+        else
+            line.set_color(lineId, color.red)
+
+// Detect bearish engulfing pattern and create line
+if isBearishEngulfing
+    newLine = line.new(x1=bar_index[1], y1=low[1], x2=bar_index + 1, y2=low[1], 
+         color=close > high[1] ? color.green : color.red, 
+         width=1, 
+         extend=extend.right)
+    array.push(engulfingLines, newLine)
+
+    // Optional: Limit the number of stored lines to prevent memory issues
+    if array.size(engulfingLines) > 50  // Adjust this number as needed
+        line.delete(array.shift(engulfingLines))
+
+// Update colors of all existing lines
+updateLineColors()

@@ -1,0 +1,138 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+// By Chargersfan with help from syndotc
+indicator("Candle Breaks 1v1 L+S", overlay=true)
+
+//this sets the threshold of targets.  Anything below this number is shown in grey on the chart.
+percentageDiffThreshold = 0.4
+
+// Convert timeframe
+timeframe = str.tostring(timeframe.period)
+
+if timeframe.isintraday and timeframe.multiplier >= 60
+    timeframe := str.tostring(timeframe.multiplier / 60) + 'H'
+    timeframe
+
+if timeframe.isintraday and timeframe.multiplier < 60  
+    timeframe := str.tostring(timeframe.multiplier) + "m"
+    timeframe
+
+if timeframe == "1.2H"
+    timeframe := "72m"
+
+if timeframe == "1.3333333333H"
+    timeframe := "80m"
+
+if timeframe == "1.5H"
+    timeframe := "90m"
+
+if timeframe == "1.6H"
+    timeframe := "96m"
+
+if timeframe == "2.4H"
+    timeframe := "144m"
+
+if timeframe == "2.6666666667H"
+    timeframe := "160m"
+
+if timeframe == "4.8H"
+    timeframe := "288m"
+
+// Check previous candle
+longIsBearish = close[1] < open[1]
+longIsBullish = close > open[1]
+shortIsBullish = close[1] > open[1]
+shortIsBearish = close < open[1]
+
+// Capture open[1] and low[1] values
+openPrev = open[1]
+highPrev = high[1]
+lowPrev = low[1]
+
+// Calculate target1618 using Fibonacci sequence
+longTarget1618 = math.round(openPrev + (openPrev - lowPrev) * 0.618, 2)
+shortTarget1618 = math.round(openPrev - (highPrev - openPrev) * 0.618, 2)
+
+// Define entryPrice as open[1] of the bearish candle
+entryPrice = open[1] // + (50 * syminfo.mintick)
+
+// Calculate percentage difference between entryPrice and target1618
+longPercentageDifference = ((longTarget1618 - entryPrice) / entryPrice) * 100
+shortPercentageDifference = ((entryPrice - shortTarget1618) / entryPrice) * 100
+// Condition for percentage difference being 0.2 or greater
+longPercentageDiffCondition = longPercentageDifference >= percentageDiffThreshold
+shortPercentageDiffCondition = shortPercentageDifference >= percentageDiffThreshold
+
+// Condition for bullish candle breaking above bearish candle
+bullishBreakAboveBearish = longIsBearish and longIsBullish and close > open[1]
+// Condition for bullish candle breaking above bearish candle
+bearishBreakBelowBullish = shortIsBullish and shortIsBearish and close < open[1]
+
+string direction = ""
+
+// Plotting shapes for visual indication on the chart with target1618 and percentageDifference in the label
+if bullishBreakAboveBearish
+    direction := "Long"
+    direction
+
+    if longPercentageDiffCondition
+        label.new(bar_index,
+             high,
+             "🎯 " + str.tostring(math.round(longPercentageDifference, 2)) + "%" +
+             "\nX " + str.tostring(longTarget1618) +
+             "\nE " + str.tostring(entryPrice), 
+             style=label.style_label_down,
+             color=color.green,
+             textcolor=color.white)
+    else
+        label.new(bar_index, high, str.tostring(math.round(longPercentageDifference, 2)) + "%", style=label.style_label_down, color=color.gray, textcolor=color.black)
+
+if bearishBreakBelowBullish
+    direction := "Short"
+    direction
+
+    if shortPercentageDiffCondition
+        label.new(bar_index,
+             low,
+             "🎯 " + str.tostring(math.round(shortPercentageDifference, 2)) + "%" +
+             "\nE " + str.tostring(entryPrice) +
+             "\nX " + str.tostring(shortTarget1618),
+             style=label.style_label_up,
+             color=color.red,
+             textcolor=color.white)
+    else
+        label.new(bar_index, low, str.tostring(math.round(shortPercentageDifference, 2)) + "%", style=label.style_label_up, color=color.gray, textcolor=color.black)
+
+// Alert condition for main condition
+alertcondition(bullishBreakAboveBearish, title="Bullish Breaks Above Bearish", message="Bullish Breaks Above Bearish Candle")
+
+// New alert condition for main condition and percentage difference being 0.2 or greater
+alertcondition(bullishBreakAboveBearish and longPercentageDiffCondition, title="Bullish Breaks Above Bearish with %Diff >= 0.2", message="Bullish Breaks Above Bearish Candle with %Diff >= 0.2")
+
+// Sending notifications with JSON-formatted alert message
+if bullishBreakAboveBearish and longPercentageDiffCondition
+    alert('{"symbol":"' + syminfo.ticker
+             + '", "tf":"' + timeframe
+             + '", "direction":"' + str.tostring(direction)
+             + '", "price":"' + str.tostring(entryPrice) 
+             + '", "tp":"' + str.tostring(longTarget1618)
+             + '", "date":"' + str.format_time(timenow)     
+             + '", "situation":"' + "1v1" + '"}',
+             alert.freq_once_per_bar_close)
+
+// Alert condition for main condition
+alertcondition(bearishBreakBelowBullish, title="Bearish Breaks Below Bullish", message="Bearish Breaks Below Bullish Candle")
+
+// New alert condition for main condition and percentage difference being 0.2 or greater
+alertcondition(bearishBreakBelowBullish and shortPercentageDiffCondition, title="Bearish Breaks Below Bullish", message="Bearish Breaks Below Bullish Candle")
+
+// Sending notifications with JSON-formatted alert message
+if bearishBreakBelowBullish and shortPercentageDiffCondition
+    alert('{"symbol":"' + syminfo.ticker
+             + '", "tf":"' + timeframe
+             + '", "direction":"' + str.tostring(direction)
+             + '", "price":"' + str.tostring(entryPrice) 
+             + '", "tp":"' + str.tostring(shortTarget1618)
+             + '", "date":"' + str.format_time(timenow)  
+             + '", "situation":"' + "1v1" + '"}',
+             alert.freq_once_per_bar_close)
