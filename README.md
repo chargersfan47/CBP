@@ -100,8 +100,8 @@ Brief description of the files:
 
 To use it:
 
-1.  Create a new folder for the output of the simulation.  Suggested location is (root)\Data\\{asset}\Simulations \n
-    Name it something meaningful; its name will be used in the creation of the summary file.  See suggested naming scheme below.
+1.  Create a new folder for the output of the simulation.  Suggested location is (root)\Data\\{asset}\Simulations
+Name it something meaningful; its name will be used in the creation of the summary file.  See suggested naming scheme below.
 2.  Update the configuration settings in `config.py` to define how you want the simulated bot to function, and set the input / output folder paths.
 3.  Run `main.py` in terminal to start the simulator.
 
