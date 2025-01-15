@@ -86,7 +86,7 @@ The BotSim1.0 folder contains a program for simulating trading strategies based 
 - A list of currently open positions in **open_positions.csv**.  As trades are closed, they are removed from this file and moved to...
 - A list of closed positions in **closed_positions.csv**.  This file contains instance performance, because each row represents an open trade and a close trade.
 - A list of all trades made in four types: open long, close long, open short, close short.  This file is called **trades_all.csv**.
-- A performance summary report, named **(folder name)_(start_date)_(end_date).csv**.  It produces a monthly performance summary, and a report on results by timeframe. 
+- A performance summary report, named **(folder name)\_(start_date)\_(end_date).csv**.  It produces a monthly performance summary, and a report on results by timeframe. 
 
 Brief description of the files:
 - **config.py** - Contains the configurable settings for a simulator run.
@@ -100,7 +100,7 @@ Brief description of the files:
 
 To use it:
 
-1.  Create a new folder for the output of the simulation.  Suggested location is (root)\Data\{asset}\Simulations
+1.  Create a new folder for the output of the simulation.  Suggested location is (root)\Data\\{asset}\Simulations \n
     Name it something meaningful; its name will be used in the creation of the summary file.  See suggested naming scheme below.
 2.  Update the configuration settings in `config.py` to define how you want the simulated bot to function, and set the input / output folder paths.
 3.  Run `main.py` in terminal to start the simulator.
