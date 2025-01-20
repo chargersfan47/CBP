@@ -12,7 +12,7 @@ from datetime import datetime
 # Default paths (change these to your actual paths). You can put them here or enter them when prompted.
 # The default price data path I've put here is just a guess because I don't know what date you downloaded the data, so it guesses today:
 price_data_folder = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Candles', datetime.now().strftime('%Y-%m-%d'))
-instances_folder = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Instances', '1v1', 'Unprocessed', 'ProcessThese')
+instances_folder = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Instances', '1v1', 'Unprocessed')
 default_output_folder = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Instances', '1v1', 'Processed', 'CompleteSet')
 
 # Flag to control whether the old file is deleted after saving the output
