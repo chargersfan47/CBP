@@ -35,7 +35,7 @@ symbol = 'SOLUSDT'
 # If you want a basic set, use the default: ['1M', '1w', '3d', '1d', '12h', '8h', '6h', '4h', '2h', '1h', '30m', '15m', '5m', '3m', '1m'].
 # HOWEVER, I recommend just downloading the 1m timeframe as any other timeframes can be generated from it.
 # To do so, comment out this line (add a # character to the front of it) and then uncomment the next line by removing the '#' character. 
-timeframes = ['1M', '1w', '3d', '1d', '12h', '8h', '6h', '4h', '2h', '1h', '30m', '15m', '5m', '3m', '1m']
+timeframes = ['1w', '3d', '1d', '12h', '8h', '6h', '4h', '2h', '1h', '30m', '15m', '5m', '3m', '1m']
 #timeframes = ['1m']
 
 # - start_date: The start date for the data download. In SOLUSDT's case, the earliest data available starts at 2020-09-14
@@ -98,9 +98,9 @@ for timeframe in timeframes:
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
 
     # Generate the filename
-    start_date_formatted = start_date.replace('-', '')
-    end_date_formatted = end_date.replace('-', '')
-    filename = f'{symbol}_binance_{start_date_formatted}_{end_date_formatted}_{timeframe}.csv'
+    filename_start_date = df['timestamp'].iloc[0].strftime('%Y%m%d')
+    filename_end_date = df['timestamp'].iloc[-1].strftime('%Y%m%d')
+    filename = f'{symbol}_binance_{filename_start_date}_{filename_end_date}_{timeframe}.csv'
     file_path = os.path.join(folder_path, filename)
 
     # Save to a CSV file

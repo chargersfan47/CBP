@@ -11,7 +11,7 @@ import os
 default_folder_path = os.path.join("..", "..", "Data", "SOLUSDT", "Candles", datetime.now().strftime('%Y-%m-%d'))
 
 # Define the custom timeframes
-timeframes = ['3m', '4m', '5m', '6m', '8m', '9m', '10m', '12m', '15m', '16m', '18m', '20m', '24m', '30m', '32m', '40m', '45m', '48m', '72m', '80m', '90m', '96m', '144m', '160m', '288m', '2h', '3h', '4h', '6h', '8h', '12h', '1D', '2D', '3D', '4D', '5D', '6D', '7D', '8D', '9D', '10D', '11D', '12D', '13D', '14D', '15D', '16D', '17D', '18D', '19D', '20D', '21D', '22D', '23D', '24D', '25D', '26D', '27D', '28D', '29D', '30D', '31D', '32D', '33D', '34D', '35D', '36D']
+timeframes = ['3m', '4m', '5m', '6m', '8m', '9m', '10m', '12m', '15m', '16m', '18m', '20m', '24m', '30m', '32m', '40m', '45m', '48m', '72m', '80m', '90m', '96m', '144m', '160m', '288m', '1h', '2h', '3h', '4h', '6h', '8h', '12h', '1D', '2D', '3D', '4D', '5D', '6D', '7D', '8D', '9D', '10D', '11D', '12D', '13D', '14D', '15D', '16D', '17D', '18D', '19D', '20D', '21D', '22D', '23D', '24D', '25D', '26D', '27D', '28D', '29D', '30D', '31D', '32D', '33D', '34D', '35D', '36D']
 
 # **************************************************************************************************
 # Prompt for the folder path
@@ -32,8 +32,12 @@ df = pd.read_csv(input_file)
 df['timestamp'] = pd.to_datetime(df['timestamp'])
 df.set_index('timestamp', inplace=True)
 
-# Get the datestamp from the first record
+# Get the datestamps from the first and last records
 first_record_date = df.index[0].strftime('%Y%m%d')
+last_record_date = df.index[-1].strftime('%Y%m%d')
+
+# Get the symbol from the file name 
+symbol = os.path.basename(input_file).split('_')[0]
 
 # Function to resample the data
 def resample_data(df, rule):
@@ -68,7 +72,7 @@ for tf in timeframes:
     combined_df = handle_year_end_rollover(df, rule)
     
     # Save the combined data for each timeframe
-    file_name = f"{folder_path}/solusdt_binance_{first_record_date}_{tf}.csv"
+    file_name = f"{folder_path}/{symbol}_binance_{first_record_date}_{last_record_date}_{tf}.csv"
     combined_df.to_csv(file_name, index=True)
 
     print(f"Data for timeframe {tf} saved to {file_name}")
