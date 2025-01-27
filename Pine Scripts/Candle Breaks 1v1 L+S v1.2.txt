@@ -1,0 +1,121 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=6
+// By chargersfan47; original script by syndotc
+// Candle Breaks 1v1 L+S version 1.2 - adds a check for rollovers and prevents false breaks from triggering on mismatched time periods
+// Version 1.1 added a scaling factor to significant digits used based on price.
+indicator("Candle Breaks 1v1 L+S v1.2", overlay=true)
+
+// Change this to determine the minimum size of a break you want to identify.  Breaks below this threshold will appear in grey and not produce alerts.
+// default set at 0.4 which means breaks larger than 0.4% will be identified.
+percentageDiffThreshold = 0.4
+
+// Convert timeframe
+timeframe = str.tostring(timeframe.period)
+
+if timeframe.isintraday and timeframe.multiplier >= 60
+    timeframe := str.tostring(timeframe.multiplier / 60) + 'H'
+else if timeframe.isintraday and timeframe.multiplier < 60  
+    timeframe := str.tostring(timeframe.multiplier) + "m"
+
+// Custom timeframes
+switch
+    timeframe == "1.2H" => timeframe := "72m"
+    timeframe == "1.3333333333H" => timeframe := "80m"
+    timeframe == "1.5H" => timeframe := "90m"
+    timeframe == "1.6H" => timeframe := "96m"
+    timeframe == "2.4H" => timeframe := "144m"
+    timeframe == "2.6666666667H" => timeframe := "160m"
+    timeframe == "4.8H" => timeframe := "288m"
+
+// Check previous candle
+longIsBearish = close[1] < open[1]
+longIsBullish = close > open[1]
+shortIsBullish = close[1] > open[1]
+shortIsBearish = close < open[1]
+
+// Capture previous candle values
+openPrev = open[1]
+highPrev = high[1]
+lowPrev = low[1]
+
+// Determine significant digits for price
+sigDigits = 0
+if openPrev < 1
+    sigDigits := 4
+else if openPrev < 10
+    sigDigits := 3
+else if openPrev < 100
+    sigDigits := 2
+else
+    sigDigits := 2
+
+// Calculate target1618 using Fibonacci sequence with dynamic rounding
+longTarget1618 = math.round(openPrev + (openPrev - lowPrev) * 0.618, sigDigits)
+shortTarget1618 = math.round(openPrev - (highPrev - openPrev) * 0.618, sigDigits)
+
+// Define entryPrice as open[1] of the bearish candle
+entryPrice = open[1]
+
+// Calculate percentage difference between entryPrice and target1618
+longPercentageDifference = ((longTarget1618 - entryPrice) / entryPrice) * 100
+shortPercentageDifference = ((entryPrice - shortTarget1618) / entryPrice) * 100
+
+// Conditions for percentage difference being 0.4 or greater
+longPercentageDiffCondition = longPercentageDifference >= percentageDiffThreshold
+shortPercentageDiffCondition = shortPercentageDifference >= percentageDiffThreshold
+
+// Conditions for bullish and bearish breaks
+bullishBreakAboveBearish = longIsBearish and longIsBullish and close > open[1]
+bearishBreakBelowBullish = shortIsBullish and shortIsBearish and close < open[1]
+
+// Check if current candle duration is equal to or shorter than the previous candle duration
+currentCandleDuration = time_close - time
+previousCandleDuration = time - time[1]
+isPeriodValid = currentCandleDuration <= previousCandleDuration
+
+string direction = ""
+
+// Plotting shapes for visual indication on the chart with target1618 and percentageDifference in the label
+if isPeriodValid and bullishBreakAboveBearish
+    direction := "Long"
+    if longPercentageDiffCondition
+        label.new(bar_index, high,
+             "🎯 " + str.tostring(math.round(longPercentageDifference, 2)) + "%" +
+             "\nX " + str.tostring(longTarget1618) +
+             "\nE " + str.tostring(entryPrice), 
+             style=label.style_label_down,
+             color=color.green,
+             textcolor=color.white)
+    else
+        label.new(bar_index, high, str.tostring(math.round(longPercentageDifference, 2)) + "%", style=label.style_label_down, color=color.gray, textcolor=color.black)
+
+if isPeriodValid and bearishBreakBelowBullish
+    direction := "Short"
+    if shortPercentageDiffCondition
+        label.new(bar_index, low,
+             "🎯 " + str.tostring(math.round(shortPercentageDifference, 2)) + "%" +
+             "\nE " + str.tostring(entryPrice) +
+             "\nX " + str.tostring(shortTarget1618),
+             style=label.style_label_up,
+             color=color.red,
+             textcolor=color.white)
+    else
+        label.new(bar_index, low, str.tostring(math.round(shortPercentageDifference, 2)) + "%", style=label.style_label_up, color=color.gray, textcolor=color.black)
+
+// Identify invalid long and short breaks and label them
+if not isPeriodValid and bullishBreakAboveBearish
+    label.new(bar_index, high, "Time\nMismatch", style=label.style_label_down, color=color.gray, textcolor=color.black)
+
+if not isPeriodValid and bearishBreakBelowBullish
+    label.new(bar_index, low, "Time\nMismatch", style=label.style_label_up, color=color.gray, textcolor=color.black)
+
+// Alert conditions for main conditions
+alertcondition(bullishBreakAboveBearish and longPercentageDiffCondition, title="Bullish Break Above Threshold", message="Bullish Break Above Threshold Candle")
+alertcondition(bearishBreakBelowBullish and shortPercentageDiffCondition, title="Bearish Break Above Threshold", message="Bearish Break Above Threshold Candle")
+
+// Sending notifications with JSON-formatted alert message
+if isPeriodValid and bullishBreakAboveBearish and longPercentageDiffCondition
+    alert('{"symbol":"' + syminfo.ticker + '", "tf":"' + timeframe + '", "direction":"' + str.tostring(direction) + '", "price":"' + str.tostring(entryPrice) + '", "tp":"' + str.tostring(longTarget1618) + '", "date":"' + str.format_time(timenow) + '", "situation":"' + "1v1" + '"}', alert.freq_once_per_bar_close)
+
+if isPeriodValid and bearishBreakBelowBullish and shortPercentageDiffCondition
+    alert('{"symbol":"' + syminfo.ticker + '", "tf":"' + timeframe + '", "direction":"' + str.tostring(direction) + '", "price":"' + str.tostring(entryPrice) + '", "tp":"' + str.tostring(shortTarget1618) + '", "date":"' + str.format_time(timenow) + '", "situation":"' + "1v1" + '"}', alert.freq_once_per_bar_close)
