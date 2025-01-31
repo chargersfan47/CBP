@@ -1,6 +1,7 @@
 # This script processes historical candle data to find instances of 1v1 candle breaks.
 # It calculates some Fibonacci retrace levels for further analysis and saves the results to CSV files.
 # Below, you can set the default threshold for opportunity size and the default input/output paths.
+# Optimized by x13pixels, thank you!
 
 import pandas as pd
 from datetime import datetime, timedelta
@@ -26,39 +27,46 @@ def find_instances(df, timeframe):
     # Create a progress bar for the file processing
     candle_pbar = tqdm(total=len(df) - 2, desc=f'Processing candles for {timeframe}', unit='candle', leave=False)
 
-    for i in range(1, len(df) - 2):  # Adjust loop to ensure there's a following candle
-        prev_candle = df.iloc[i - 1]
-        curr_candle = df.iloc[i]
-        next_candle = df.iloc[i + 1]  # The following candle
+    prev_candle = df.iloc[0]
+    curr_candle = df.iloc[1]
+    next_candle = df.iloc[2]
 
-        prev_body = abs(prev_candle['close'] - prev_candle['open'])
-        curr_body = abs(curr_candle['close'] - curr_candle['open'])
+    for i in range(1, len(df) - 2):  # Adjust loop to ensure there's a following candle
+        prev_candle_open = prev_candle['open']
+        prev_candle_close = prev_candle['close']
+        curr_candle_open = curr_candle['open']
+        curr_candle_close = curr_candle['close']
+
+        prev_body = abs(prev_candle_close - prev_candle_open)
+        curr_body = abs(curr_candle_close - curr_candle_open)
 
         # Check for bullish followed by bearish or vice versa with larger body
-        if ((prev_candle['close'] > prev_candle['open'] and curr_candle['close'] < curr_candle['open']) or
-            (prev_candle['close'] < prev_candle['open'] and curr_candle['close'] > curr_candle['open'])) and curr_body > prev_body:
+        if ((prev_candle_close > prev_candle_open and curr_candle_close < curr_candle_open) or
+            (prev_candle_close < prev_candle_open and curr_candle_close > curr_candle_open)) and curr_body > prev_body:
 
             # Calculate Fibonacci extension levels
-            if prev_candle['close'] > prev_candle['open']:
+            if prev_candle_close > prev_candle_open:
                 # Bullish followed by bearish
                 direction = 'short'
-                fib_base = prev_candle['high'] - prev_candle['open']
-                target = prev_candle['open'] - fib_base * 0.618 
-                entry = prev_candle['open']
-                fib0_5 = prev_candle['open'] + fib_base * 0.5
-                fib0_0 = prev_candle['high']
-                fib_neg0_5 = prev_candle['open'] + fib_base * 1.5
-                fib_neg1_0 = prev_candle['open'] + fib_base * 2
+                prev_candle_high = prev_candle['high']
+                fib_base = prev_candle_high - prev_candle_open
+                target = prev_candle_open - fib_base * 0.618
+                entry = prev_candle_open
+                fib0_5 = prev_candle_open + fib_base * 0.5
+                fib0_0 = prev_candle_high
+                fib_neg0_5 = prev_candle_open + fib_base * 1.5
+                fib_neg1_0 = prev_candle_open + fib_base * 2
             else:
                 # Bearish followed by bullish
                 direction = 'long'
-                fib_base = prev_candle['open'] - prev_candle['low']
-                target = prev_candle['open'] + fib_base * 0.618
-                entry = prev_candle['open']
-                fib0_5 = prev_candle['open'] - fib_base * 0.5
-                fib0_0 = prev_candle['low']
-                fib_neg0_5 = prev_candle['open'] - fib_base * 1.5
-                fib_neg1_0 = prev_candle['open'] - fib_base * 2
+                prev_candle_low = prev_candle['low']
+                fib_base = prev_candle_open - prev_candle_low
+                target = prev_candle_open + fib_base * 0.618
+                entry = prev_candle_open
+                fib0_5 = prev_candle_open - fib_base * 0.5
+                fib0_0 = prev_candle_low
+                fib_neg0_5 = prev_candle_open - fib_base * 1.5
+                fib_neg1_0 = prev_candle_open - fib_base * 2
 
             instance_id = f"{next_candle.name.strftime('%Y-%m-%d %H:%M:%S')}_{timeframe}_{situation}_{direction}"
 
@@ -78,6 +86,10 @@ def find_instances(df, timeframe):
             instances.append(instance)
 
         candle_pbar.update(1)
+
+        prev_candle = curr_candle
+        curr_candle = next_candle
+        next_candle = df.iloc[i + 1]  # The following candle
 
     candle_pbar.close()
     return pd.DataFrame(instances)
