@@ -68,22 +68,25 @@ def find_instances(df, timeframe):
                 fib_neg0_5 = prev_candle_open - fib_base * 1.5
                 fib_neg1_0 = prev_candle_open - fib_base * 2
 
-            instance_id = f"{next_candle.name.strftime('%Y-%m-%d %H:%M:%S')}_{timeframe}_{situation}_{direction}"
+            # Check if the difference between entry and target meets minimum percentage requirement
+            diff_percent = abs(target - entry) / entry
+            if diff_percent >= min_diff_percent:
+                instance_id = f"{next_candle.name.strftime('%Y-%m-%d %H:%M:%S')}_{timeframe}_{situation}_{direction}"
 
-            instance = {
-                'instance_id': instance_id,
-                'situation': situation,
-                'timeframe': timeframe,
-                'confirm_date': next_candle.name,
-                'direction': direction,
-                'target': target,
-                'entry': entry,
-                'fib0.5': fib0_5,
-                'fib0.0': fib0_0,
-                'fib-0.5': fib_neg0_5,
-                'fib-1.0': fib_neg1_0
-            }
-            instances.append(instance)
+                instance = {
+                    'instance_id': instance_id,
+                    'situation': situation,
+                    'timeframe': timeframe,
+                    'confirm_date': next_candle.name,
+                    'direction': direction,
+                    'target': target,
+                    'entry': entry,
+                    'fib0.5': fib0_5,
+                    'fib0.0': fib0_0,
+                    'fib-0.5': fib_neg0_5,
+                    'fib-1.0': fib_neg1_0
+                }
+                instances.append(instance)
 
         candle_pbar.update(1)
 
