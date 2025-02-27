@@ -32,24 +32,64 @@ Using os.path.join allows us to create a path that works on both Windows (where 
 
 We're also using relative paths here, where ".." means up one level from where the script is run.  In most cases we go up two levels to find the Data folder.
 
-The first script downloads historical data and creates a folder named after the end date of the data you download.  The other scripts don't know that date, so they guess today:
-```sh
-default_input_path = os.path.join("..", "..", "Data", "SOLUSDT", "Candles", datetime.now().strftime('%Y-%m-%d'))
-```
-So, unless you process everything on the same day, you will likely need to change the defaults.
-
 ## Processing Folder
 
 The scripts in the Processing folder are used for fetching historical candle data, converting timeframes, finding instances, and processing instance data. 
 
 ### Step 1:  Download historical data.  Run `download_binance_historical_data.py`
-   - This script downloads historical candle data for any trading pair (default: SOLUSDT) from Binance Futures and saves it in CSV format.
-   - By default it will download a standard set of TFs but if you want to deal with a wide variety of custom timeframes, I recommend only downloading the 1m candle data and proceeding to step 2.
+   This script downloads historical candle data for any trading pair (default: SOLUSDT) from Binance and saves it in CSV format.
+   
+   #### Command Line Arguments
+
+   The script now accepts command line arguments, and has three operation modes:
+
+   1. **--some Mode**:
+      - Downloads all standard timeframes directly from Binance
+      (Standard timeframes are: 1m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1mo)
+      - Overwrites any existing candle data files
+      - Useful if you only want to do backtesting on a small set of timeframes.
+      - Example: `python download_binance_historical_data.py --some`
+
+   2. **--all Mode**:
+      - Downloads only the 1m timeframe data from Binance
+      - Then automatically launches the timeframe converter script to generate all other timeframes.  You can customize the list of timeframes by editing the converter script.
+      - Useful for creating a complete set of custom timeframes efficiently
+      - Example: `python download_binance_historical_data.py --all`
+
+   3. **Default Mode** (neither --all nor --some):
+      - First processes the 1m timeframe.  If it does not exist, it will download it in full from Binance.  If it does exist, it will just download enough data to bring it up to current.
+      - Then it updates all other timeframe files found in the same folder using data from the 1m timeframe
+      - Efficient approach that only downloads necessary data to update files
+      - Example: `python download_binance_historical_data.py`
+
+   #### Additional Command Line Options:
+
+   - `-s, --symbol SYMBOL`: Specify trading pair (default: SOLUSDT)
+      - Example: `python download_binance_historical_data.py -s BTCUSDT`
+
+   - `-k, --keep-incomplete`: Keep incomplete candles 
+      - By default, the script will delete any candles that represent an incomplete period of time.  If you don't want the script to do that, you can specify the -k argument to keep these incomplete candles.
+      - Example: `python download_binance_historical_data.py -k`
+
+   - `-d, --directory PATH`: Set custom directory for candle data
+      - Not recommended; only use this if you don't want to use the suggested folder structure.
+      - Example: `python download_binance_historical_data.py -d "C:\MyCandleData"`
+
+   - `--start-date DATE`: Set start date for historical data (YYYY-MM-DD or YYYYMMDD)
+      - Example: `python download_binance_historical_data.py --start-date 2022-01-01`
+
+   - `--end-date DATE`: Set end date for historical data (YYYY-MM-DD or YYYYMMDD, default: current date)
+      - Example: `python download_binance_historical_data.py --end-date 2023-12-31`
+
+   - `-v, --verbose`: Enable detailed output during processing
+      - Example: `python download_binance_historical_data.py -v`
+
 
 ### (Optional) Step 2:  Create custom timeframes.  Run `historical_data_TF_converter.py`
    - This script resamples the 1m candle data into specified custom timeframes and saves the resulting data as new CSV files.
-   - The default list of custom TFs was provided by syndotc.  The intra-day TFs are all factors of 1440, or in other words, divide evenly into a day.  The multi-day TFs run up to 36D.
-
+   - The default list of custom TFs was provided by syndotc.  The intra-day TFs are all factors of 1440, or in other words, divide evenly into a day.  The multi-day TFs run up to 36D.  Also included are the 1W up to 6W, and the 1mo and 2mo.
+   - This script will now optionally accept -p or --path as a command line argument, followed by a path to your folder where the 1m candle data is saved.
+   
 ### Step 3: Find 1v1 instances.  Run `historical_opps_finder_1v1.py`
    - This script processes historical candle data to find instances of 1v1 candle breaks.
    - It calculates some Fibonacci retrace levels for further analysis and saves the results to CSV files.
@@ -168,4 +208,3 @@ Ethereum (ETH):
 ```sh
 0x0665cdD88E305A299B91294f9C9D11746A4688e7
 ```
-

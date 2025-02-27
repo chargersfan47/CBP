@@ -12,10 +12,10 @@ import threading
 from datetime import datetime
 
 # Default paths (change these to your actual paths). You can put them here or enter them when prompted.
-# The default price data path I've put here is just a guess because I don't know what date you downloaded the data, so it guesses today:
-price_data_folder = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Candles', datetime.now().strftime('%Y-%m-%d'))
-instances_folder = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Instances', '1v1', 'Unprocessed')
-default_output_folder = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Instances', '1v1', 'Processed', 'CompleteSet')
+# Updated to match the new structure used by the download_binance_historical_data.py script:
+price_data_folder = os.path.join('..', '..', 'Data', 'SOLUSDT-BINANCE', 'Candles')
+instances_folder = os.path.join('..', '..', 'Data', 'SOLUSDT-BINANCE', 'Instances', '1v1', 'Unprocessed')
+default_output_folder = os.path.join('..', '..', 'Data', 'SOLUSDT-BINANCE', 'Instances', '1v1', 'Processed', 'CompleteSet')
 
 # Flag to control whether the old file is deleted after saving the output
 delete_unprocessed_when_done = True
@@ -153,6 +153,9 @@ def process_chunk(chunk, timeframe, chunk_idx, total_chunks):
 instances_folder = input(f"\n\rEnter the folder path containing the instance CSV files (default: {instances_folder}): ") or instances_folder
 price_data_folder = input(f"\n\rEnter the folder path containing the price data CSV files (default: {price_data_folder}): ") or price_data_folder
 output_folder = input(f"\n\rEnter the output folder path to save the updated instance CSV files (default: {default_output_folder}): ") or default_output_folder
+
+# Create the output directory if it doesn't exist
+os.makedirs(output_folder, exist_ok=True)
 
 # Load the 1-minute data
 one_minute_csv = next(f for f in os.listdir(price_data_folder) if f.endswith('_1m.csv'))

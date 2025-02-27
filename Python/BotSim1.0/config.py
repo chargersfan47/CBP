@@ -27,16 +27,16 @@ STATIC_TIME_CAPIT_DURATION = 60  # Or any other suitable number of hours
 prompt_for_paths = False # basically deprecated; there's an option in the main menu for this now anyway.
 
 # candles_file_default will need the path to your 1m.csv file (not just the folder!)
-candles_file_default = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Candles', 'fill in the rest of your path to your candle data 1m.csv') 
+candles_file_default = os.path.join('..', '..', 'Data', 'SOLUSDT-BINANCE', 'Candles', 'SOLUSDT_binance_1m.csv') 
 
 # I recommend using the "Subset" folder for instances; you can have the bot simulate trades across
 # all instances by pointing this at "CompleteSet", or just a subset by placing copies of your instance
 # files in the subset folder.
-instances_folder_default = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Instances', '1v1', 'Processed', 'SubSet')
+instances_folder_default = os.path.join('..', '..', 'Data', 'SOLUSDT-BINANCE', 'Instances', '1v1', 'Processed', 'SubSet')
 
 # For output_folder_default, you should create a new folder for each run, named something meaningful (see the README file for suggestions).
 # The name of the output folder will be used in the name of the summary file for reference.
-output_folder_default = os.path.join('..', '..', 'Data', 'SOLUSDT', 'Simulations', 'NewFolderHere')
+output_folder_default = os.path.join('..', '..', 'Data', 'SOLUSDT-BINANCE', 'Simulations', 'NewFolderHere')
 
 # logging settings.  Turning these on produce a lot of extra files in the output folder that aren't really required.
 # I was just using them to debug some issues with monthly rollovers.  Probably best to leave them off.

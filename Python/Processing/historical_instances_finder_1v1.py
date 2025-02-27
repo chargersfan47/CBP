@@ -15,9 +15,9 @@ min_diff_percent = 0.004  # 0.4%
 situation = '1v1'
 
 # Default paths (change these to your actual paths). You can put them here or enter them when prompted.
-# The default input path I've put here is just a guess because I don't know what date you downloaded the data, so it guesses today:
-default_input_path = os.path.join("..", "..", "Data", "SOLUSDT", "Candles", datetime.now().strftime('%Y-%m-%d'))
-default_output_path = os.path.join("..", "..", "Data", "SOLUSDT", "Instances", situation, "Unprocessed")
+# Updated to match the new structure used by the download_binance_historical_data.py script:
+default_input_path = os.path.join("..", "..", "Data", "SOLUSDT-BINANCE", "Candles")
+default_output_path = os.path.join("..", "..", "Data", "SOLUSDT-BINANCE", "Instances", situation, "Unprocessed")
 
 # **************************************************************************************************
 # Function to find instances and calculate Fibonacci extension levels
