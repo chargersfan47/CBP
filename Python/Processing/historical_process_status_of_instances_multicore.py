@@ -117,6 +117,16 @@ def update_status(instance_df, timeframe, chunk_idx, total_chunks):
         instance_df.at[idx, 'MaxDrawdown'] = max_drawdown
         instance_df.at[idx, 'MaxDrawdown Date'] = max_drawdown_date
 
+        # Calculate MaxFib using price interpolation
+        # For both long and short, we use fib1.0 (entry) as X and fib0.0 as Y
+        # The formula is: fib_level = (price - Y)/(X - Y)
+        fib1_price = instance['entry']  # This is our 1.0 level
+        fib0_price = instance['fib0.0']  # This is our 0.0 level
+        
+        if fib1_price != fib0_price:  # Avoid division by zero
+            max_fib = (max_drawdown - fib0_price) / (fib1_price - fib0_price)
+            instance_df.at[idx, 'MaxFib'] = max_fib
+
         # Check Fibonacci levels in order between active and completed dates
         fib_levels = [
             ('fib0.5', 'Reached0.5', 'DateReached0.5'),

@@ -19,7 +19,7 @@ def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, tot
                 continue
 
         trade_name = f"{trade['Timeframe']} {trade['direction']}({str(uuid.uuid4())[:4]}...{str(uuid.uuid4())[-4:]})"
-        entry_price = float(trade['Entry'])
+        entry_price = float(trade['entry'])
         
         # Calculate position size based on selected method
         position_size = calculate_position_size(entry_price, cash_on_hand)
