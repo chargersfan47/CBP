@@ -1,6 +1,8 @@
 import os
 import csv
 from datetime import datetime
+import pandas as pd
+import time
 
 def write_log_entry(entry, filepath, columns):
     file_exists = os.path.isfile(filepath)
@@ -12,14 +14,24 @@ def write_log_entry(entry, filepath, columns):
 
 def remove_log_entry(entry_id, filepath, columns):
     temp_filepath = filepath + '.tmp'
-    with open(filepath, 'r', newline='') as f, open(temp_filepath, 'w', newline='') as temp_f:
-        reader = csv.DictReader(f)
-        writer = csv.DictWriter(temp_f, fieldnames=columns)
-        writer.writeheader()
-        for row in reader:
-            if row['trade_id'] != entry_id:
-                writer.writerow(row)
-    os.replace(temp_filepath, filepath)
+    try:
+        # First try the normal operation
+        df = pd.read_csv(filepath)
+        df = df[df['trade_id'] != entry_id]
+        df.to_csv(temp_filepath, index=False)
+        os.replace(temp_filepath, filepath)
+    except PermissionError:
+        # If we get a permission error, wait and retry
+        time.sleep(0.1)
+        try:
+            df = pd.read_csv(filepath)
+            df = df[df['trade_id'] != entry_id]
+            df.to_csv(temp_filepath, index=False)
+            os.replace(temp_filepath, filepath)
+        except PermissionError as e:
+            print(f"Warning: Could not update {filepath} - {str(e)}")
+            return False
+    return True
 
 def analyze_monthly_data(analysis_file, trades_file, open_positions_file, month, custom_order, timeframe_data):
     monthly_data = []
