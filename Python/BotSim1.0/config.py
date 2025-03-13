@@ -18,10 +18,25 @@ MIN_PENDING_AGE = 720
 USE_MAX_PENDING_AGE = False
 MAX_PENDING_AGE = 2500
 
+# Enter trades at Fibonacci levels
+DD_on_fib0_5 = False  # Enter at fib 0.5 level
+DD_on_fib0_0 = False  # Enter at fib 0.0 level
+DD_on_fib_0_5 = False  # Enter at fib -0.5 level
+DD_on_fib_1_0 = False  # Enter at fib -1.0 level
+
+# Groups filtering
+AVOID_GROUPS = False  # If True, only take trades where group_id is 'NA' (if group_id exists in data)
+
 #Exits:
 # Exit trades after a certain number of hours by turning on the following two variables:
 USE_STATIC_TIME_CAPIT = False
 STATIC_TIME_CAPIT_DURATION = 60  # Or any other suitable number of hours
+
+# Exit trades at Fibonacci levels
+SL_on_fib0_5 = False  # Exit at fib 0.5 level
+SL_on_fib0_0 = False  # Exit at fib 0.0 level
+SL_on_fib_0_5 = False  # Exit at fib -0.5 level
+SL_on_fib_1_0 = False  # Exit at fib -1.0 level
 
 # Update these paths to match your environment.  The defaults are just placeholders.
 prompt_for_paths = False # basically deprecated; there's an option in the main menu for this now anyway.

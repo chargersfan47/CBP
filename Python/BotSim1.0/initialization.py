@@ -30,6 +30,21 @@ def load_instances(instances_folder, start_date, end_date):
                     entry['Completed Date'] = datetime.strptime(entry['Completed Date'], '%Y-%m-%d %H:%M:%S')
                 else:
                     entry['Completed Date'] = None
+                
+                # Handle DateReached timestamps for Fibonacci levels
+                date_fields = [
+                    'DateReached0.5', 'DateReached0.0', 
+                    'DateReached-0.5', 'DateReached-1.0'
+                ]
+                for field in date_fields:
+                    if field in entry and entry[field] and entry[field].strip():
+                        try:
+                            entry[field] = datetime.strptime(entry[field], '%Y-%m-%d %H:%M:%S')
+                        except (ValueError, TypeError):
+                            # Leave as is if parsing fails
+                            entry[field] = None
+                    else:
+                        entry[field] = None
 
                 # Convert numerical values to float
                 for key in ['Entry', 'target']:
@@ -38,9 +53,15 @@ def load_instances(instances_folder, start_date, end_date):
 
                 entry['Timeframe'] = timeframe
                 
+                # Apply group filtering at load time if AVOID_GROUPS is enabled
+                if AVOID_GROUPS and 'group_id' in entry and entry['group_id'] != 'NA':
+                    continue  # Skip this entry if it belongs to a group and AVOID_GROUPS is True
+                
                 # Filter by date range
                 if entry['Active Date'] and start_date <= entry['Active Date'] <= end_date:
                     instances.append(entry)
+    
+    print(f"Loaded {len(instances)} instances after applying filters")
     return instances
 
 def load_candles(file_path, start_date, end_date):

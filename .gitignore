@@ -1,6 +1,11 @@
 # Ignore the .venv folder
 Python/.venv/
 
+# Ignore Python cache directories
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Ignore all files in the Data folder except .gitkeep files
 Data/**
 !Data/**/

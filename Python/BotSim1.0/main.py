@@ -8,9 +8,16 @@ from config import *
 
 def prompt_paths():
     global instances_folder, candles_file, output_folder
-    instances_folder = input("Enter the folder path containing the instance CSV files: ")
-    candles_file = input("Enter the path to the 1m candles data file: ")
-    output_folder = input("Enter the folder path for output files: ")
+    
+    # Show current path and get new input, keeping existing if empty
+    new_instances_folder = input(f"Enter the folder path containing the instance CSV files [{instances_folder}]: ")
+    instances_folder = new_instances_folder if new_instances_folder else instances_folder
+    
+    new_candles_file = input(f"Enter the path to the 1m candles data file [{candles_file}]: ")
+    candles_file = new_candles_file if new_candles_file else candles_file
+    
+    new_output_folder = input(f"Enter the folder path for output files [{output_folder}]: ")
+    output_folder = new_output_folder if new_output_folder else output_folder
 
 def prompt_dates():
     global starting_date, ending_date

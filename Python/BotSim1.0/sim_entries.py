@@ -2,10 +2,11 @@ import os
 import uuid
 from datetime import datetime
 from log_utils import write_log_entry
-from config import CREATE_TRADES_BY_MONTH, USE_MIN_PENDING_AGE, MIN_PENDING_AGE, USE_MAX_PENDING_AGE, MAX_PENDING_AGE
+from config import *
 from position_size import calculate_position_size
 
 def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder):
+    # Check for regular trade entries first
     active_trades = [trade for trade in instances if trade['Active Date'] == minute_data['timestamp']]
     for trade in active_trades:
         # Check if trade meets the minimum pending age requirement
@@ -17,80 +18,209 @@ def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, tot
                 continue
             if USE_MAX_PENDING_AGE and difference_minutes > MAX_PENDING_AGE:
                 continue
+        
+        # Group filtering is now done at load time, no need to check here
 
         trade_name = f"{trade['Timeframe']} {trade['direction']}({str(uuid.uuid4())[:4]}...{str(uuid.uuid4())[-4:]})"
         entry_price = float(trade['entry'])
         
-        # Calculate position size based on selected method
-        position_size = calculate_position_size(entry_price, cash_on_hand)
+        # Process regular entry and update position values
+        total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = process_entry(
+            trade, trade_name, entry_price, minute_data, trade_log, open_positions, 
+            total_long_position, total_short_position, long_cost_basis, short_cost_basis, 
+            cash_on_hand, fee_rate, output_folder)
+    
+    # Check for fibonacci level entries based on open positions
+    # This is more efficient as we only need to check positions that are already active
+    
+    # Process each fibonacci level separately
+    if DD_on_fib0_5:
+        # Filter only those open positions that have reached fib0.5 at the current timestamp
+        # Make sure DateReached0.5 exists and is not empty/None/NaN
+        fib_positions = [pos for pos in open_positions if 
+                        'DateReached0.5' in pos and 
+                        pos['DateReached0.5'] is not None and
+                        pos['DateReached0.5'] != "" and
+                        pos['DateReached0.5'] == minute_data['timestamp'] and
+                        pos.get('fib0.5') is not None]
         
-        trade_cost = float(position_size) * entry_price
-        trade_fee = trade_cost * float(fee_rate)
-        trade_id = str(uuid.uuid4())  # Generate unique ID for each trade
+        for position in fib_positions:
+            # Use the original trade ID with the fib level appended
+            fib_trade_id = f"{position['trade_id']}_fib0.5"
+            fib_trade_name = f"{position['Timeframe']} {position['Direction']} Fib0.5"
+            fib_entry_price = float(position['fib0.5'])
+            
+            # Pass the position directly to process_entry with the new trade ID
+            total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = process_entry(
+                position, fib_trade_name, fib_entry_price, minute_data, trade_log, open_positions, 
+                total_long_position, total_short_position, long_cost_basis, short_cost_basis, 
+                cash_on_hand, fee_rate, output_folder, trade_id=fib_trade_id)
+            
+    if DD_on_fib0_0:
+        # Filter only those open positions that have reached fib0.0 at the current timestamp
+        # Make sure DateReached0.0 exists and is not empty/None/NaN
+        fib_positions = [pos for pos in open_positions if 
+                        'DateReached0.0' in pos and 
+                        pos['DateReached0.0'] is not None and
+                        pos['DateReached0.0'] != "" and
+                        pos['DateReached0.0'] == minute_data['timestamp'] and
+                        pos.get('fib0.0') is not None]
+        
+        for position in fib_positions:
+            # Use the original trade ID with the fib level appended
+            fib_trade_id = f"{position['trade_id']}_fib0.0"
+            fib_trade_name = f"{position['Timeframe']} {position['Direction']} Fib0.0"
+            fib_entry_price = float(position['fib0.0'])
+            
+            # Pass the position directly to process_entry with the new trade ID
+            total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = process_entry(
+                position, fib_trade_name, fib_entry_price, minute_data, trade_log, open_positions, 
+                total_long_position, total_short_position, long_cost_basis, short_cost_basis, 
+                cash_on_hand, fee_rate, output_folder, trade_id=fib_trade_id)
+            
+    if DD_on_fib_0_5:
+        # Filter only those open positions that have reached fib-0.5 at the current timestamp
+        # Make sure DateReached-0.5 exists and is not empty/None/NaN
+        fib_positions = [pos for pos in open_positions if 
+                        'DateReached-0.5' in pos and 
+                        pos['DateReached-0.5'] is not None and
+                        pos['DateReached-0.5'] != "" and
+                        pos['DateReached-0.5'] == minute_data['timestamp'] and
+                        pos.get('fib-0.5') is not None]
+        
+        for position in fib_positions:
+            # Use the original trade ID with the fib level appended
+            fib_trade_id = f"{position['trade_id']}_fib-0.5"
+            fib_trade_name = f"{position['Timeframe']} {position['Direction']} Fib-0.5"
+            fib_entry_price = float(position['fib-0.5'])
+            
+            # Pass the position directly to process_entry with the new trade ID
+            total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = process_entry(
+                position, fib_trade_name, fib_entry_price, minute_data, trade_log, open_positions, 
+                total_long_position, total_short_position, long_cost_basis, short_cost_basis, 
+                cash_on_hand, fee_rate, output_folder, trade_id=fib_trade_id)
+            
+    if DD_on_fib_1_0:
+        # Filter only those open positions that have reached fib-1.0 at the current timestamp
+        # Make sure DateReached-1.0 exists and is not empty/None/NaN
+        fib_positions = [pos for pos in open_positions if 
+                        'DateReached-1.0' in pos and 
+                        pos['DateReached-1.0'] is not None and
+                        pos['DateReached-1.0'] != "" and
+                        pos['DateReached-1.0'] == minute_data['timestamp'] and
+                        pos.get('fib-1.0') is not None]
+        
+        for position in fib_positions:
+            # Use the original trade ID with the fib level appended
+            fib_trade_id = f"{position['trade_id']}_fib-1.0"
+            fib_trade_name = f"{position['Timeframe']} {position['Direction']} Fib-1.0"
+            fib_entry_price = float(position['fib-1.0'])
+            
+            # Pass the position directly to process_entry with the new trade ID
+            total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = process_entry(
+                position, fib_trade_name, fib_entry_price, minute_data, trade_log, open_positions, 
+                total_long_position, total_short_position, long_cost_basis, short_cost_basis, 
+                cash_on_hand, fee_rate, output_folder, trade_id=fib_trade_id)
 
-        if trade['direction'] == 'long':
-            old_cost_basis = float(long_cost_basis)
-            total_long_position += float(position_size)
-            long_cost_basis = (old_cost_basis * (total_long_position - float(position_size)) + trade_cost) / total_long_position
-            cost_basis_change = f"{round(old_cost_basis, 4)} -> {round(long_cost_basis, 4)}"
-            order_type = 'open long'
-            units_traded = float(position_size)
-        elif trade['direction'] == 'short':
-            old_cost_basis = float(short_cost_basis)
-            total_short_position += float(position_size)
-            short_cost_basis = (old_cost_basis * (total_short_position - float(position_size)) + trade_cost) / total_short_position
-            cost_basis_change = f"{round(old_cost_basis, 4)} -> {round(short_cost_basis, 4)}"
-            order_type = 'open short'
-            units_traded = -float(position_size)
+    return total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand
 
-        cash_on_hand -= trade_fee
+def process_entry(trade, trade_name, entry_price, minute_data, trade_log, open_positions, 
+                 total_long_position, total_short_position, long_cost_basis, short_cost_basis, 
+                 cash_on_hand, fee_rate, output_folder, trade_id=None):
+    """Process a trade entry and calculate updated position values"""
+    
+    # Calculate position details
+    position_size = calculate_position_size(entry_price, cash_on_hand)
+    trade_cost = float(position_size) * float(entry_price)
+    trade_fee = trade_cost * float(fee_rate)
+    trade_id = trade_id if trade_id else str(uuid.uuid4())  # Generate unique ID for each trade
 
-        trade_entry_dict = {
-            'trade_id': trade_id,
-            'confirm_date': datetime.strptime(trade['confirm_date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['confirm_date'], str) else trade['confirm_date'],
-            'active_date': datetime.strptime(trade['Active Date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['Active Date'], str) else trade['Active Date'],
-            'trade_date': minute_data['timestamp'],  # Current minute being processed
-            'completed_date': datetime.strptime(trade['Completed Date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['Completed Date'], str) else trade['Completed Date'],
-            'order_type': order_type,
-            'trade_fee': round(trade_fee, 4),
-            'price': round(entry_price, 4),
-            'units_traded': round(units_traded, 4),
-            'cost_basis_change': cost_basis_change,
-            'realized_PnL': None,
-            'total_long_position': round(total_long_position, 4),
-            'total_short_position': round(total_short_position, 4),
-            'balance': round(total_long_position - total_short_position, 4),
-            'ind_PnL': 0,  # Set to 0 when entering trades
-            'timeframe': trade['Timeframe'],
-            'Name': trade_name,
-            'winner': None,
-            'loss_reason': None
-        }
-        trade_log.append(trade_entry_dict)
+    # Determine direction and update position values
+    direction_field = 'Direction' if 'Direction' in trade else 'direction'
+    direction = trade[direction_field]
+    
+    if direction.lower() == 'long':
+        old_cost_basis = float(long_cost_basis)
+        total_long_position += float(position_size)
+        long_cost_basis = (float(long_cost_basis) * (float(total_long_position) - float(position_size)) + trade_cost) / float(total_long_position) if total_long_position > 0 else 0
+        cost_basis_change = f"{round(old_cost_basis, 4)} -> {round(long_cost_basis, 4)}"
+        order_type = 'open long'
+        units_traded = float(position_size)
+    else:  # short
+        old_cost_basis = float(short_cost_basis)
+        total_short_position += float(position_size)
+        short_cost_basis = (float(short_cost_basis) * (float(total_short_position) - float(position_size)) + trade_cost) / float(total_short_position) if total_short_position > 0 else 0
+        cost_basis_change = f"{round(old_cost_basis, 4)} -> {round(short_cost_basis, 4)}"
+        order_type = 'open short'
+        units_traded = -float(position_size)
 
-        open_position_dict = {
-            'trade_id': trade_id,
-            'confirm_date': datetime.strptime(trade['confirm_date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['confirm_date'], str) else trade['confirm_date'],
-            'active_date': datetime.strptime(trade['Active Date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['Active Date'], str) else trade['Active Date'],  # Add active_date
-            'trade_date': minute_data['timestamp'],
-            'Completed Date': datetime.strptime(trade['Completed Date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['Completed Date'], str) else trade['Completed Date'],
-            'Target Price': float(trade['target']),
-            'Position Size': float(position_size),
-            'Direction': trade['direction'],
-            'Open Price': entry_price,
-            'Timeframe': trade['Timeframe'],
-            'Name': trade_name
-        }
-        open_positions.append(open_position_dict)
+    cash_on_hand -= trade_fee  # Deduct fee only from cash, no trade_cost for futures
 
-        # Write trade log entry to both trades_all.csv and trades_yyyymm.csv based on flag
-        trades_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'completed_date', 'order_type', 'trade_fee', 'price', 'units_traded', 'cost_basis_change', 'realized_PnL', 'total_long_position', 'total_short_position', 'balance', 'ind_PnL', 'timeframe', 'Name', 'winner', 'loss_reason']
-        write_log_entry(trade_entry_dict, os.path.join(output_folder, 'trades_all.csv'), trades_columns)
-        if CREATE_TRADES_BY_MONTH:
-            write_log_entry(trade_entry_dict, os.path.join(output_folder, f'trades_{minute_data["timestamp"].strftime("%Y%m")}.csv'), trades_columns)
+    # Get field names based on what's available in the trade dictionary
+    target_field = 'Target Price' if 'Target Price' in trade else 'target'
+    confirm_date_field = 'confirm_date' if 'confirm_date' in trade else 'Confirm Date'
+    active_date_field = 'Active Date' if 'Active Date' in trade else 'active_date'
+    completed_date_field = 'Completed Date' if 'Completed Date' in trade else 'completed_date'
+    timeframe_field = 'Timeframe' if 'Timeframe' in trade else 'timeframe'
 
-        # Write open positions log entry to open_positions.csv
-        open_positions_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'Completed Date', 'Target Price', 'Position Size', 'Direction', 'Open Price', 'Timeframe', 'Name']
-        write_log_entry(open_position_dict, os.path.join(output_folder, 'open_positions.csv'), open_positions_columns)
+    # Create comprehensive trade log entry
+    trade_entry_dict = {
+        'trade_id': trade_id,
+        'confirm_date': datetime.strptime(trade[confirm_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[confirm_date_field], str) else trade[confirm_date_field],
+        'active_date': datetime.strptime(trade[active_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[active_date_field], str) else trade[active_date_field],
+        'trade_date': minute_data['timestamp'],  # Current minute being processed
+        'completed_date': datetime.strptime(trade[completed_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[completed_date_field], str) else trade[completed_date_field],
+        'order_type': order_type,
+        'trade_fee': round(trade_fee, 4),
+        'price': round(entry_price, 4),
+        'units_traded': round(units_traded, 4),
+        'cost_basis_change': cost_basis_change,
+        'realized_PnL': None,
+        'total_long_position': round(total_long_position, 4),  # Include current position values
+        'total_short_position': round(total_short_position, 4),  # Include current position values
+        'balance': round(total_long_position - total_short_position, 4),
+        'ind_PnL': 0,  # Set to 0 when entering trades
+        'timeframe': trade[timeframe_field],
+        'Name': trade_name,
+        'winner': None,
+        'loss_reason': None
+    }
+    trade_log.append(trade_entry_dict)
 
+    # Add to open positions with all required fields
+    open_position = {
+        'trade_id': trade_id,
+        'confirm_date': datetime.strptime(trade[confirm_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[confirm_date_field], str) else trade[confirm_date_field],
+        'active_date': datetime.strptime(trade[active_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[active_date_field], str) else trade[active_date_field],
+        'trade_date': minute_data['timestamp'],
+        'Completed Date': datetime.strptime(trade[completed_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[completed_date_field], str) else trade[completed_date_field],
+        'Target Price': float(trade[target_field]) if trade.get(target_field) is not None else None,
+        'Position Size': float(position_size),
+        'Direction': direction,
+        'Open Price': entry_price,
+        'Timeframe': trade[timeframe_field],
+        'Name': trade_name,
+        # Explicitly add Fibonacci data fields with proper date handling
+        'DateReached0.5': datetime.strptime(trade['DateReached0.5'], '%Y-%m-%d %H:%M:%S') if 'DateReached0.5' in trade and isinstance(trade['DateReached0.5'], str) and trade['DateReached0.5'] else trade.get('DateReached0.5'),
+        'DateReached0.0': datetime.strptime(trade['DateReached0.0'], '%Y-%m-%d %H:%M:%S') if 'DateReached0.0' in trade and isinstance(trade['DateReached0.0'], str) and trade['DateReached0.0'] else trade.get('DateReached0.0'),
+        'DateReached-0.5': datetime.strptime(trade['DateReached-0.5'], '%Y-%m-%d %H:%M:%S') if 'DateReached-0.5' in trade and isinstance(trade['DateReached-0.5'], str) and trade['DateReached-0.5'] else trade.get('DateReached-0.5'),
+        'DateReached-1.0': datetime.strptime(trade['DateReached-1.0'], '%Y-%m-%d %H:%M:%S') if 'DateReached-1.0' in trade and isinstance(trade['DateReached-1.0'], str) and trade['DateReached-1.0'] else trade.get('DateReached-1.0'),
+        'fib0.5': float(trade['fib0.5']) if 'fib0.5' in trade and trade['fib0.5'] is not None else None,
+        'fib0.0': float(trade['fib0.0']) if 'fib0.0' in trade and trade['fib0.0'] is not None else None,
+        'fib-0.5': float(trade['fib-0.5']) if 'fib-0.5' in trade and trade['fib-0.5'] is not None else None,
+        'fib-1.0': float(trade['fib-1.0']) if 'fib-1.0' in trade and trade['fib-1.0'] is not None else None
+    }
+    
+    open_positions.append(open_position)
+    
+    # Write trade log entry to both trades_all.csv and trades_yyyymm.csv based on flag
+    trades_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'completed_date', 'order_type', 'trade_fee', 'price', 'units_traded', 'cost_basis_change', 'realized_PnL', 'total_long_position', 'total_short_position', 'balance', 'ind_PnL', 'timeframe', 'Name', 'winner', 'loss_reason']
+    write_log_entry(trade_entry_dict, os.path.join(output_folder, 'trades_all.csv'), trades_columns)
+    if CREATE_TRADES_BY_MONTH:
+        write_log_entry(trade_entry_dict, os.path.join(output_folder, f'trades_{minute_data["timestamp"].strftime("%Y%m")}.csv'), trades_columns)
+
+    # Write open positions log entry to open_positions.csv
+    open_position_columns = list(open_position.keys())
+    write_log_entry(open_position, os.path.join(output_folder, 'open_positions.csv'), open_position_columns)
+    
     return total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand

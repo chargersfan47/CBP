@@ -9,7 +9,10 @@ from reporting import generate_summary_report
 from initialization import load_state
 
 # Define columns for open_positions
-open_positions_columns = ['trade_id', 'confirm_date', 'trade_date', 'Completed Date', 'Target Price', 'Position Size', 'Direction', 'Open Price', 'Timeframe', 'Name']
+open_positions_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'Completed Date', 'Target Price', 
+                         'Position Size', 'Direction', 'Open Price', 'Timeframe', 'Name',
+                         'DateReached0.5', 'DateReached0.0', 'DateReached-0.5', 'DateReached-1.0',
+                         'fib0.5', 'fib0.0', 'fib-0.5', 'fib-1.0', 'instance_id']
 analysis_columns = ['timestamp', 'total_bankroll', 'cash_on_hand', 'total_long_position', 'long_cost_basis', 'long_pnl', 'total_short_position', 'short_cost_basis', 'short_pnl', 'close']
 
 def chunk_by_month(day_candles):
@@ -56,7 +59,7 @@ def run_simulation(instances, candles, starting_date, ending_date, output_folder
             total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = sim_entries(
                 minute_data, instances, float(fee_rate), trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder)
 
-            # Check for trades to close
+            # Check for trades to close 
             total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, long_pnl, short_pnl = sim_exits(
                 minute_data, trade_log, open_positions, float(fee_rate), total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, long_pnl, short_pnl, output_folder)
 
