@@ -89,22 +89,26 @@ def update_status(instance_df, timeframe, chunk_idx, total_chunks):
         active_date = find_target_date(instance['entry'], entry_direction, instance['confirm_date'])
         if active_date is None:
             instance_pbar.update(1)
-            continue  # Stop processing the record if no active date is found
+            continue  # Skip to next record if entry point wasn't reached (still pending)
 
         instance_df.at[idx, 'Active Date'] = active_date
         instance_df.at[idx, 'Status'] = 'Active'
 
         # Check if the target was reached
         completed_date = find_target_date(instance['target'], target_direction, active_date)
-        if completed_date is None:
-            instance_pbar.update(1)
-            continue  # Stop processing the record if no completed date is found
+        
+        # For calculating fib levels, we'll use either the completed date or the latest available date
+        end_date = completed_date
+        
+        if completed_date is not None:
+            instance_df.at[idx, 'Completed Date'] = completed_date
+            instance_df.at[idx, 'Status'] = 'Completed'
+        else:
+            # For active instances, use the last date in the data as the end date for calculations
+            end_date = thread_local.one_minute_data.index[-1]
 
-        instance_df.at[idx, 'Completed Date'] = completed_date
-        instance_df.at[idx, 'Status'] = 'Completed'
-
-        # Calculate MaxDrawdown and MaxDrawdown Date
-        drawdown_period = thread_local.one_minute_data.loc[active_date:completed_date]
+        # Calculate MaxDrawdown and MaxDrawdown Date for both completed and active instances
+        drawdown_period = thread_local.one_minute_data.loc[active_date:end_date]
         
         if instance['direction'] == 'short':
             max_drawdown_row = drawdown_period.loc[drawdown_period['high'].idxmax()] if not drawdown_period.empty else pd.Series()
@@ -117,17 +121,17 @@ def update_status(instance_df, timeframe, chunk_idx, total_chunks):
         instance_df.at[idx, 'MaxDrawdown'] = max_drawdown
         instance_df.at[idx, 'MaxDrawdown Date'] = max_drawdown_date
 
-        # Calculate MaxFib using price interpolation
+        # Calculate MaxFib using price interpolation for both completed and active instances
         # For both long and short, we use fib1.0 (entry) as X and fib0.0 as Y
         # The formula is: fib_level = (price - Y)/(X - Y)
         fib1_price = instance['entry']  # This is our 1.0 level
         fib0_price = instance['fib0.0']  # This is our 0.0 level
         
-        if fib1_price != fib0_price:  # Avoid division by zero
+        if fib1_price != fib0_price and max_drawdown is not None:  # Avoid division by zero
             max_fib = (max_drawdown - fib0_price) / (fib1_price - fib0_price)
             instance_df.at[idx, 'MaxFib'] = max_fib
 
-        # Check Fibonacci levels in order between active and completed dates
+        # Check Fibonacci levels in order between active and end dates (works for both completed and active instances)
         fib_levels = [
             ('fib0.5', 'Reached0.5', 'DateReached0.5'),
             ('fib0.0', 'Reached0.0', 'DateReached0.0'),
@@ -135,13 +139,14 @@ def update_status(instance_df, timeframe, chunk_idx, total_chunks):
             ('fib-1.0', 'Reached-1.0', 'DateReached-1.0')
         ]
 
+        current_check_date = active_date
         for fib, reach_key, date_key in fib_levels:
             if (instance['direction'] == 'long' and max_drawdown <= instance[fib]) or (instance['direction'] == 'short' and max_drawdown >= instance[fib]):
-                fib_date = find_target_date(instance[fib], entry_direction, active_date, completed_date)
+                fib_date = find_target_date(instance[fib], entry_direction, current_check_date, end_date)
                 if fib_date:
                     instance_df.at[idx, reach_key] = 1
                     instance_df.at[idx, date_key] = fib_date
-                    active_date = fib_date  # Update active_date to the fib_date for the next fib level check
+                    current_check_date = fib_date  # Update current_check_date to the fib_date for the next fib level check
                 else:
                     break
             else:
