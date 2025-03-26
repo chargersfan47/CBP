@@ -759,13 +759,129 @@ def parse_args():
     parser.add_argument('-k', '--keep-incomplete', action='store_true', help='Keep incomplete periods')
     parser.add_argument('--some', action='store_true', help='Download all standard timeframes')
     parser.add_argument('--all', action='store_true', help='Download 1m data and launch converter')
+    parser.add_argument('--sample', nargs=2, metavar=('EXCHANGE', 'HH:MM'), help='Download 1s data for a 1-minute period. Requires --start-date and --symbol.')
     args = parser.parse_args()
     
-    # Validate that --some and --all are not used together
-    if args.some and args.all:
-        parser.error("Cannot use both --some and --all arguments together. They represent different modes of operation.")
+    # Validate that modes are not used together
+    if sum([args.some, args.all, bool(args.sample)]) > 1:
+        parser.error("Cannot use --some, --all, or --sample arguments together. They represent different modes of operation.")
+    
+    # Validate sample mode requirements
+    if args.sample and (not args.start_date or args.start_date == start_date or not args.symbol):
+        parser.error("--sample mode requires both --start-date and --symbol to be explicitly specified.")
     
     return args
+
+def download_sample_data(symbol, exchange_id, start_date, sample_time, data_dir=None):
+    """
+    Downloads 1-second candle data for a specified 1-minute period.
+    
+    Args:
+        symbol (str): Trading pair symbol (e.g., 'BTCUSDT')
+        exchange_id (str): Exchange ID (e.g., 'binance')
+        start_date (str): Start date in 'YYYY-MM-DD' format
+        sample_time (str): Time in 'HH:MM' format for the 1-minute sample
+        data_dir (str, optional): Directory where to save the data
+    
+    Returns:
+        DataFrame: The downloaded data
+    """
+    # Initialize exchange
+    exchange_instance = init_exchange(exchange_id)
+    
+    # Create sample time range (1 minute)
+    start_datetime = pd.to_datetime(f"{start_date} {sample_time}:00", utc=True)
+    end_datetime = start_datetime + pd.Timedelta(minutes=1)
+    
+    # Convert timestamps to milliseconds
+    since = int(start_datetime.timestamp() * 1000)
+    end_timestamp = int(end_datetime.timestamp() * 1000)
+    
+    print(f"Downloading 1s sample data for {symbol} on {exchange_id}")
+    print(f"Time period: {start_datetime} to {end_datetime} UTC")
+    
+    # Use 1s timeframe
+    timeframe = '1s'
+    exchange_tf = timeframe  # Assuming 1s is supported directly
+    
+    # Calculate timeframe duration in milliseconds
+    tf_ms = 1000  # 1 second = 1000 milliseconds
+    
+    retry_count = 0
+    max_retries = 5
+    retry_delay = 5  # seconds
+    
+    pbar = tqdm(desc=f'Downloading {symbol} 1s candles', total=60, unit='candles')
+    all_candles = []
+    current_timestamp = since
+    
+    while current_timestamp < end_timestamp:
+        try:
+            # Note: Some exchanges might not support 1s timeframe directly
+            # In that case, we might need to use a smaller timeframe or tick data
+            candles = exchange_instance.fetch_ohlcv(
+                timeframe=exchange_tf,
+                symbol=symbol,
+                since=current_timestamp,
+                limit=100  # Get more than we need for the minute
+            )
+            
+            if not candles:
+                break
+                
+            # Filter to only include candles within our time range
+            filtered_candles = [c for c in candles if since <= c[0] < end_timestamp]
+            all_candles.extend(filtered_candles)
+            
+            # Update progress bar based on time coverage
+            time_covered = min(end_timestamp, candles[-1][0] + tf_ms) - current_timestamp
+            seconds_covered = time_covered // 1000
+            pbar.update(seconds_covered)
+            
+            # Get timestamp of last candle
+            current_timestamp = candles[-1][0] + tf_ms
+            
+            # Rate limiting
+            time.sleep(exchange_instance.rateLimit / 1000)  # Convert to seconds
+            
+            retry_count = 0  # Reset retry count after successful request
+            
+            # If we've gone past our end time, we're done
+            if current_timestamp >= end_timestamp:
+                break
+                
+        except Exception as e:
+            retry_count += 1
+            if retry_count > max_retries:
+                print(f"\nError downloading sample data: {str(e)}")
+                print(f"Failed after {max_retries} retries")
+                break
+            print(f"\nRetry {retry_count}/{max_retries} after error: {str(e)}")
+            time.sleep(retry_delay)
+            continue
+    
+    pbar.close()
+    
+    if not all_candles:
+        print("No sample data downloaded")
+        return None
+        
+    # Convert to DataFrame
+    df = pd.DataFrame(all_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    
+    # Convert timestamp to datetime with UTC timezone
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+    
+    # Set timestamp as index
+    df.set_index('timestamp', inplace=True)
+    
+    # Sort by index
+    df.sort_index(inplace=True)
+    
+    # Remove duplicates
+    df = df[~df.index.duplicated(keep='first')]
+    
+    return df
 
 def timeframe_sort_key(tf):
     """Sort key function for timeframes that ensures:
@@ -806,7 +922,59 @@ def main():
     verbose = args.verbose
     keep_incomplete = args.keep_incomplete if hasattr(args, 'keep_incomplete') else False
     
-    # Set folder path
+    # Handle sample mode
+    if args.sample:
+        exchange_id = args.sample[0].lower()
+        sample_time = args.sample[1]
+        
+        # Validate time format
+        try:
+            hour, minute = map(int, sample_time.split(':'))
+            if not (0 <= hour < 24 and 0 <= minute < 60):
+                raise ValueError()
+        except ValueError:
+            print(f"Error: Invalid time format '{sample_time}'. Please use HH:MM format (e.g., 14:30).")
+            sys.exit(1)
+        
+        # Set output directory
+        if args.directory:
+            folder_path = args.directory
+        else:
+            # Create samples directory with the correct structure: Data/{symbol}-{exchange}/Candles/Samples
+            folder_path = os.path.join(default_folder_path, 
+                                   f"{args.symbol}-{exchange_id.upper()}", 
+                                   "Candles",
+                                   "Samples")
+        
+        # Create data folder if it doesn't exist
+        os.makedirs(folder_path, exist_ok=True)
+        
+        # Format the date and time for the filename
+        date_str = pd.to_datetime(args.start_date).strftime('%Y%m%d')
+        time_str = sample_time.replace(':', '')
+        
+        # Generate output filename
+        output_filename = f"{args.symbol}-{exchange_id.upper()}_sample_{date_str}_{time_str}_1s.csv"
+        output_path = os.path.join(folder_path, output_filename)
+        
+        # Download the sample data
+        df = download_sample_data(
+            args.symbol,
+            exchange_id,
+            args.start_date,
+            sample_time,
+            folder_path
+        )
+        
+        if df is not None:
+            # Save the data
+            df.to_csv(output_path, date_format='%Y-%m-%d %H:%M:%S')
+            print(f"Sample data saved to {output_path}")
+        
+        print_execution_time(start_timestamp)
+        return
+    
+    # Set folder path for non-sample modes
     if args.directory:
         folder_path = args.directory
     else:
