@@ -5,9 +5,20 @@ from log_utils import write_log_entry
 from config import *
 from position_size import calculate_position_size
 
+def compare_timestamps_ignore_seconds(ts1, ts2):
+    """Compare two timestamps ignoring the seconds component"""
+    if ts1 is None or ts2 is None:
+        return False
+    return (ts1.year == ts2.year and 
+            ts1.month == ts2.month and 
+            ts1.day == ts2.day and 
+            ts1.hour == ts2.hour and 
+            ts1.minute == ts2.minute)
+
 def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder):
     # Check for regular trade entries first
-    active_trades = [trade for trade in instances if trade['Active Date'] == minute_data['timestamp']]
+    active_trades = [trade for trade in instances if trade['Active Date'] is not None and 
+                     compare_timestamps_ignore_seconds(trade['Active Date'], minute_data['timestamp'])]
     for trade in active_trades:
         # Check if trade meets the minimum pending age requirement
         if USE_MIN_PENDING_AGE or USE_MAX_PENDING_AGE:
@@ -41,7 +52,7 @@ def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, tot
                         'DateReached0.5' in pos and 
                         pos['DateReached0.5'] is not None and
                         pos['DateReached0.5'] != "" and
-                        pos['DateReached0.5'] == minute_data['timestamp'] and
+                        compare_timestamps_ignore_seconds(pos['DateReached0.5'], minute_data['timestamp']) and
                         pos.get('fib0.5') is not None]
         
         for position in fib_positions:
@@ -63,7 +74,7 @@ def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, tot
                         'DateReached0.0' in pos and 
                         pos['DateReached0.0'] is not None and
                         pos['DateReached0.0'] != "" and
-                        pos['DateReached0.0'] == minute_data['timestamp'] and
+                        compare_timestamps_ignore_seconds(pos['DateReached0.0'], minute_data['timestamp']) and
                         pos.get('fib0.0') is not None]
         
         for position in fib_positions:
@@ -85,7 +96,7 @@ def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, tot
                         'DateReached-0.5' in pos and 
                         pos['DateReached-0.5'] is not None and
                         pos['DateReached-0.5'] != "" and
-                        pos['DateReached-0.5'] == minute_data['timestamp'] and
+                        compare_timestamps_ignore_seconds(pos['DateReached-0.5'], minute_data['timestamp']) and
                         pos.get('fib-0.5') is not None]
         
         for position in fib_positions:
@@ -107,7 +118,7 @@ def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, tot
                         'DateReached-1.0' in pos and 
                         pos['DateReached-1.0'] is not None and
                         pos['DateReached-1.0'] != "" and
-                        pos['DateReached-1.0'] == minute_data['timestamp'] and
+                        compare_timestamps_ignore_seconds(pos['DateReached-1.0'], minute_data['timestamp']) and
                         pos.get('fib-1.0') is not None]
         
         for position in fib_positions:

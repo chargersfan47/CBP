@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta
 from config import *
 from log_utils import write_log_entry, remove_log_entry
+from sim_entries import compare_timestamps_ignore_seconds  # Import the function for timestamp comparison
 
 def close_trade(open_position, close_price, trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, long_pnl, short_pnl, output_folder, minute_data, loss_reason=None):
     position_size = float(open_position['Position Size'])
@@ -102,7 +103,7 @@ def check_fib_levels(minute_data, open_position):
         'DateReached0.5' in open_position and 
         open_position['DateReached0.5'] is not None and 
         open_position['DateReached0.5'] != "" and
-        open_position['DateReached0.5'] == minute_data['timestamp'] and 
+        compare_timestamps_ignore_seconds(open_position['DateReached0.5'], minute_data['timestamp']) and 
         open_position.get('fib0.5') is not None):
         return True, float(open_position['fib0.5']), 'fib0.5_exit'
         
@@ -110,7 +111,7 @@ def check_fib_levels(minute_data, open_position):
         'DateReached0.0' in open_position and 
         open_position['DateReached0.0'] is not None and 
         open_position['DateReached0.0'] != "" and
-        open_position['DateReached0.0'] == minute_data['timestamp'] and 
+        compare_timestamps_ignore_seconds(open_position['DateReached0.0'], minute_data['timestamp']) and 
         open_position.get('fib0.0') is not None):
         return True, float(open_position['fib0.0']), 'fib0.0_exit'
         
@@ -118,7 +119,7 @@ def check_fib_levels(minute_data, open_position):
         'DateReached-0.5' in open_position and 
         open_position['DateReached-0.5'] is not None and 
         open_position['DateReached-0.5'] != "" and
-        open_position['DateReached-0.5'] == minute_data['timestamp'] and 
+        compare_timestamps_ignore_seconds(open_position['DateReached-0.5'], minute_data['timestamp']) and 
         open_position.get('fib-0.5') is not None):
         return True, float(open_position['fib-0.5']), 'fib-0.5_exit'
         
@@ -126,7 +127,7 @@ def check_fib_levels(minute_data, open_position):
         'DateReached-1.0' in open_position and 
         open_position['DateReached-1.0'] is not None and 
         open_position['DateReached-1.0'] != "" and
-        open_position['DateReached-1.0'] == minute_data['timestamp'] and 
+        compare_timestamps_ignore_seconds(open_position['DateReached-1.0'], minute_data['timestamp']) and 
         open_position.get('fib-1.0') is not None):
         return True, float(open_position['fib-1.0']), 'fib-1.0_exit'
     
@@ -146,7 +147,7 @@ def sim_exits(minute_data, trade_log, open_positions, fee_rate, total_long_posit
         loss_reason = None
 
         # Check if the trade should be closed due to completed date
-        if open_position['Completed Date'] == minute_data['timestamp']:
+        if compare_timestamps_ignore_seconds(open_position['Completed Date'], minute_data['timestamp']):
             should_close = True
             close_price = float(open_position['Target Price'])
 
