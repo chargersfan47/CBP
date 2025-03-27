@@ -9,6 +9,41 @@ def compare_timestamps_ignore_seconds(ts1, ts2):
     """Compare two timestamps ignoring the seconds component"""
     if ts1 is None or ts2 is None:
         return False
+    
+    # Convert string timestamps to datetime objects if needed
+    if isinstance(ts1, str):
+        if not ts1:  # Handle empty strings
+            return False
+        try:
+            # Try multiple formats
+            try:
+                ts1 = datetime.strptime(ts1, '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                try:
+                    ts1 = datetime.strptime(ts1, '%Y-%m-%d %H:%M:%S.%f')
+                except ValueError:
+                    return False
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return False
+            
+    if isinstance(ts2, str):
+        if not ts2:  # Handle empty strings
+            return False
+        try:
+            # Try multiple formats
+            try:
+                ts2 = datetime.strptime(ts2, '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                try:
+                    ts2 = datetime.strptime(ts2, '%Y-%m-%d %H:%M:%S.%f')
+                except ValueError:
+                    return False
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return False
+    
+    # Now both ts1 and ts2 are datetime objects or the function has already returned False
     return (ts1.year == ts2.year and 
             ts1.month == ts2.month and 
             ts1.day == ts2.day and 

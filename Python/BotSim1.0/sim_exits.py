@@ -142,6 +142,8 @@ def sim_exits(minute_data, trade_log, open_positions, fee_rate, total_long_posit
         if isinstance(open_position['trade_date'], str):
             open_position['trade_date'] = datetime.strptime(open_position['trade_date'], '%Y-%m-%d %H:%M:%S')
         
+        # We no longer need to convert 'Completed Date' here as the compare_timestamps_ignore_seconds function handles all conversions
+        
         should_close = False
         close_price = None
         loss_reason = None
