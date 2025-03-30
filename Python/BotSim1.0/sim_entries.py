@@ -6,49 +6,76 @@ from config import *
 from position_size import calculate_position_size
 
 def compare_timestamps_ignore_seconds(ts1, ts2):
-    """Compare two timestamps ignoring the seconds component"""
+    """
+    Compare two timestamps ignoring seconds.
+    Optimized for performance by minimizing string parsing and object creation.
+    """
+    # Quick None checks
     if ts1 is None or ts2 is None:
         return False
     
-    # Convert string timestamps to datetime objects if needed
+    # Handle string timestamps
     if isinstance(ts1, str):
-        if not ts1:  # Handle empty strings
+        if not ts1: 
             return False
-        try:
-            # Try multiple formats
-            try:
-                ts1 = datetime.strptime(ts1, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                try:
-                    ts1 = datetime.strptime(ts1, '%Y-%m-%d %H:%M:%S.%f')
-                except ValueError:
-                    return False
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            return False
-            
     if isinstance(ts2, str):
-        if not ts2:  # Handle empty strings
-            return False
-        try:
-            # Try multiple formats
-            try:
-                ts2 = datetime.strptime(ts2, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                try:
-                    ts2 = datetime.strptime(ts2, '%Y-%m-%d %H:%M:%S.%f')
-                except ValueError:
-                    return False
-        except Exception as e:
-            print(f"An error occurred: {e}")
+        if not ts2:
             return False
     
-    # Now both ts1 and ts2 are datetime objects or the function has already returned False
-    return (ts1.year == ts2.year and 
-            ts1.month == ts2.month and 
-            ts1.day == ts2.day and 
-            ts1.hour == ts2.hour and 
-            ts1.minute == ts2.minute)
+    # Extract year, month, day, hour, minute only - ignore conversion if possible
+    try:
+        # Get year, month, day, hour, minute for ts1
+        if isinstance(ts1, datetime):
+            y1, m1, d1, h1, min1 = ts1.year, ts1.month, ts1.day, ts1.hour, ts1.minute
+        elif isinstance(ts1, str):
+            # Fast string parsing - avoid full datetime conversion
+            parts = ts1.split(' ')
+            if len(parts) >= 2:  # Has date and time
+                date_parts = parts[0].split('-')
+                time_parts = parts[1].split(':')
+                y1, m1, d1 = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
+                h1, min1 = int(time_parts[0]), int(time_parts[1])
+            else:  # Date only
+                date_parts = parts[0].split('-')
+                y1, m1, d1 = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
+                h1, min1 = 0, 0
+                
+        # Get year, month, day, hour, minute for ts2
+        if isinstance(ts2, datetime):
+            y2, m2, d2, h2, min2 = ts2.year, ts2.month, ts2.day, ts2.hour, ts2.minute
+        elif isinstance(ts2, str):
+            # Fast string parsing - avoid full datetime conversion
+            parts = ts2.split(' ')
+            if len(parts) >= 2:  # Has date and time
+                date_parts = parts[0].split('-')
+                time_parts = parts[1].split(':')
+                y2, m2, d2 = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
+                h2, min2 = int(time_parts[0]), int(time_parts[1])
+            else:  # Date only
+                date_parts = parts[0].split('-')
+                y2, m2, d2 = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
+                h2, min2 = 0, 0
+                
+        # Direct comparison of components - no object creation
+        return (y1 == y2 and m1 == m2 and d1 == d2 and h1 == h2 and min1 == min2)
+        
+    except (ValueError, IndexError) as e:
+        # Fall back to original method only if parsing fails
+        try:
+            # Convert to datetime only if needed and only once
+            if isinstance(ts1, str):
+                ts1 = datetime.strptime(ts1, '%Y-%m-%d %H:%M:%S')
+            if isinstance(ts2, str):
+                ts2 = datetime.strptime(ts2, '%Y-%m-%d %H:%M:%S')
+                
+            # Compare only year, month, day, hour, minute
+            return (ts1.year == ts2.year and 
+                    ts1.month == ts2.month and 
+                    ts1.day == ts2.day and 
+                    ts1.hour == ts2.hour and 
+                    ts1.minute == ts2.minute)
+        except Exception:
+            return False
 
 def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder):
     # Check for regular trade entries first

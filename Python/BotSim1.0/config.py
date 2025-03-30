@@ -36,7 +36,7 @@ STATIC_TIME_CAPIT_DURATION = 60  # Or any other suitable number of hours
 SL_on_fib0_5 = False  # Exit at fib 0.5 level
 SL_on_fib0_0 = False  # Exit at fib 0.0 level
 SL_on_fib_0_5 = False  # Exit at fib -0.5 level
-SL_on_fib_1_0 = False  # Exit at fib -1.0 level
+SL_on_fib_1_0 = True  # Exit at fib -1.0 level
 
 # Update these paths to match your environment.  The defaults are just placeholders.
 prompt_for_paths = False # basically deprecated; there's an option in the main menu for this now anyway.

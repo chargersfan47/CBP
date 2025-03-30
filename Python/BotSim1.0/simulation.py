@@ -1,5 +1,4 @@
 from tqdm import tqdm
-import os
 from datetime import timedelta, datetime
 from config import *
 from sim_entries import sim_entries
@@ -34,10 +33,29 @@ def run_simulation(instances, candles, starting_date, ending_date, output_folder
     short_pnl = 0
     cash_on_hand = starting_bankroll
 
-    # Load state if continuing
-    state = load_state(output_folder)
-    if state:
-        minute_log, trade_log, open_positions, current_month, latest_date, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = state
+    # Use the state values passed in from main.py instead of loading again
+    if len(minute_log) > 0:
+        # Extract values from the minute_log if it exists
+        current_month = int(starting_date.strftime('%Y%m'))
+        latest_date = starting_date
+        
+        # If we have minute_log entries, update our tracking variables
+        if isinstance(minute_log[0], dict):
+            # New format (dictionary)
+            latest_date = minute_log[0]['timestamp']
+            cash_on_hand = minute_log[0]['cash_on_hand']
+            total_long_position = minute_log[0]['total_long_position']
+            long_cost_basis = minute_log[0]['long_cost_basis']
+            total_short_position = minute_log[0]['total_short_position']
+            short_cost_basis = minute_log[0]['short_cost_basis']
+        elif len(minute_log[0]) >= 8:  
+            # Old format (list)
+            latest_date = datetime.strptime(minute_log[0][0], '%Y-%m-%d %H:%M:%S')
+            cash_on_hand = float(minute_log[0][2])
+            total_long_position = float(minute_log[0][3])
+            long_cost_basis = float(minute_log[0][4])
+            total_short_position = float(minute_log[0][6])
+            short_cost_basis = float(minute_log[0][7])
 
     # Create progress bar for the entire date range
     total_minutes = int((ending_date - starting_date).total_seconds() // 60)

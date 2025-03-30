@@ -101,10 +101,12 @@ if __name__ == "__main__":
                 (minute_log, trade_log, open_positions, current_month, current_date, 
                  total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand) = state
 
-                # Ensure that all loaded trades are part of the trade_log
-                for trade in trades_all:
-                    if trade not in trade_log:
-                        trade_log.append(trade)
+                # Ensure that all loaded trades are part of the trade_log - this can be time-consuming
+                print(f"Processing trade history ({len(trades_all)} trades to check)...")
+                if len(trades_all) > 0:  # Only show progress bar if there are trades to process
+                    for trade in tqdm(trades_all, desc="Updating trade history"):
+                        if trade not in trade_log:
+                            trade_log.append(trade)
     
                 # Prompt for new end date
                 new_end_date_str = input(f"Enter new end date (YYYY-MM-DD or YYYYMMDD) [current: {ending_date.strftime('%Y-%m-%d')}]: ")
