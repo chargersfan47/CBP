@@ -4,184 +4,369 @@ from tqdm import tqdm
 from config import *
 
 def load_instances(instances_folder, start_date, end_date):
-    instances = []
+    instances_by_minute = {}  
     filenames = [filename for filename in os.listdir(instances_folder) if filename.endswith('.csv')]
-    for filename in tqdm(filenames, desc='Loading instances data'):
-        timeframe = filename.split('_')[-1].replace('.csv', '')  # Extract timeframe from filename
-        with open(os.path.join(instances_folder, filename), 'r') as file:
-            lines = file.readlines()
-            headers = lines[0].strip().split(',')
-            data = [dict(zip(headers, line.strip().split(','))) for line in lines[1:]]
-            for entry in data:
-                # Handle confirm dates
-                date_format = '%Y-%m-%d %H:%M:%S' if ' ' in entry['confirm_date'] else '%Y-%m-%d'
-                entry['confirm_date'] = datetime.strptime(entry['confirm_date'], date_format)
-                if date_format == '%Y-%m-%d':
-                    entry['confirm_date'] = entry['confirm_date'].replace(hour=0, minute=0, second=0)
-                
-                # Handle Active Date
-                if entry['Active Date']:
-                    entry['Active Date'] = datetime.strptime(entry['Active Date'], '%Y-%m-%d %H:%M:%S')
-                else:
-                    entry['Active Date'] = None
-                
-                # Handle Completed Date
-                if entry['Completed Date']:
-                    entry['Completed Date'] = datetime.strptime(entry['Completed Date'], '%Y-%m-%d %H:%M:%S')
-                else:
-                    entry['Completed Date'] = None
-                
-                # Handle DateReached timestamps for Fibonacci levels
-                date_fields = [
-                    'DateReached0.5', 'DateReached0.0', 
-                    'DateReached-0.5', 'DateReached-1.0'
-                ]
-                for field in date_fields:
-                    if field in entry and entry[field] and entry[field].strip():
-                        try:
-                            entry[field] = datetime.strptime(entry[field], '%Y-%m-%d %H:%M:%S')
-                        except (ValueError, TypeError):
-                            # Leave as is if parsing fails
-                            entry[field] = None
-                    else:
-                        entry[field] = None
-
-                # Convert numerical values to float
-                for key in ['Entry', 'target']:
-                    if key in entry:
-                        entry[key] = float(entry[key])
-
-                entry['Timeframe'] = timeframe
-                
-                # Apply group filtering at load time if AVOID_GROUPS is enabled
-                if AVOID_GROUPS and 'group_id' in entry and entry['group_id'] != 'NA':
-                    continue  # Skip this entry if it belongs to a group and AVOID_GROUPS is True
-                
-                # Filter by date range
-                if entry['Active Date'] and start_date <= entry['Active Date'] <= end_date:
-                    instances.append(entry)
     
-    print(f"Loaded {len(instances)} instances after applying filters")
-    return instances
+    with tqdm(filenames, desc='Loading instances data') as pbar:
+        for filename in pbar:
+            timeframe = filename.split('_')[-1].replace('.csv', '')  
+            try:
+                with open(os.path.join(instances_folder, filename), 'r') as file:
+                    lines = file.readlines()
+                    if not lines: 
+                        continue
+                    headers = lines[0].strip().split(',')
+                    data = [dict(zip(headers, line.strip().split(','))) for line in lines[1:] if line.strip()]
+                    
+                    for entry in data:
+                        try:
+                            confirm_date_str = entry.get('confirm_date', '').strip()
+                            if confirm_date_str:
+                                date_format = '%Y-%m-%d %H:%M:%S' if ' ' in confirm_date_str else '%Y-%m-%d'
+                                confirm_dt = datetime.strptime(confirm_date_str, date_format)
+                                if date_format == '%Y-%m-%d':
+                                    confirm_dt = confirm_dt.replace(hour=0, minute=0, second=0)
+                                entry['confirm_date'] = confirm_dt
+                            else:
+                                entry['confirm_date'] = None 
+
+                            active_date_str = entry.get('Active Date', '').strip()
+                            if active_date_str:
+                                entry['Active Date'] = datetime.strptime(active_date_str, '%Y-%m-%d %H:%M:%S')
+                            else:
+                                entry['Active Date'] = None
+                            
+                            completed_date_str = entry.get('Completed Date', '').strip()
+                            if completed_date_str:
+                                entry['Completed Date'] = datetime.strptime(completed_date_str, '%Y-%m-%d %H:%M:%S')
+                            else:
+                                entry['Completed Date'] = None
+                            
+                            date_fields = [
+                                'DateReached0.5', 'DateReached0.0', 
+                                'DateReached-0.5', 'DateReached-1.0'
+                            ]
+                            for field in date_fields:
+                                date_str = entry.get(field, '').strip()
+                                if date_str:
+                                    try:
+                                        entry[field] = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                                    except (ValueError, TypeError):
+                                        entry[field] = None 
+                                else:
+                                    entry[field] = None
+
+                            for key in ['Entry', 'target', 'entry', 'fib0.5', 'fib0.0', 'fib-0.5', 'fib-1.0']: 
+                                value_str = entry.get(key, '').strip()
+                                if value_str:
+                                    try:
+                                        entry[key] = float(value_str)
+                                    except (ValueError, TypeError):
+                                         entry[key] = None 
+                                else:
+                                    entry[key] = None
+
+                            entry['Timeframe'] = timeframe
+                            
+                            if AVOID_GROUPS and entry.get('group_id', 'NA') != 'NA':
+                                continue  
+
+                            active_date = entry.get('Active Date')
+                            if active_date and start_date <= active_date <= end_date:
+                                activation_minute = active_date.replace(second=0, microsecond=0)
+                                if activation_minute not in instances_by_minute:
+                                    instances_by_minute[activation_minute] = []
+                                instances_by_minute[activation_minute].append(entry)
+                        except Exception as e:
+                             print(f"\nWarning: Skipping entry due to error in file {filename}: {e}. Entry data: {entry}")
+                             continue 
+
+            except Exception as e:
+                print(f"\nError processing file {filename}: {e}")
+                continue 
+
+    total_loaded_instances = sum(len(v) for v in instances_by_minute.values())
+    print(f"Loaded {total_loaded_instances} instances into {len(instances_by_minute)} activation minutes after applying filters")
+    return instances_by_minute 
 
 def load_candles(file_path, start_date, end_date):
     candles = []
+    try:
+        total_lines = sum(1 for line in open(file_path, 'r')) -1 
 
-    # First, we need to find the first data point in the file
-    with open(file_path, 'r') as file:
-        first_line = file.readline()  # Read headers
-        first_data_line = file.readline().strip().split(',')
-        first_timestamp = datetime.strptime(first_data_line[0], '%Y-%m-%d %H:%M:%S')
+        with open(file_path, 'r') as file:
+             with tqdm(total=total_lines, desc='Loading candles data', unit='line') as pbar:
+                headers = file.readline().strip().split(',')
+                if not headers: 
+                    print(f"Warning: Empty or invalid header in {file_path}")
+                    return []
 
-    # Calculate the total number of minutes from the first timestamp to the end date (23:59)
-    total_minutes = int((end_date - first_timestamp).total_seconds() // 60) + 1  # Add 1 to include the last minute
+                for line in file:
+                    pbar.update(1)
+                    values = line.strip().split(',')
+                    if len(values) != len(headers): 
+                         print(f"Warning: Skipping malformed line in {file_path}: {line.strip()}")
+                         continue
+                         
+                    try:
+                        candle = {col: val for col, val in zip(headers, values)}
+                        timestamp_str = candle.get('timestamp', '').strip()
+                        if not timestamp_str:
+                             print(f"Warning: Skipping candle with missing timestamp in {file_path}: {line.strip()}")
+                             continue
+                             
+                        candle['timestamp'] = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                        
+                        if candle['timestamp'] > end_date:
+                            pbar.n = pbar.total
+                            pbar.refresh()
+                            break 
+                            
+                        if start_date <= candle['timestamp'] <= end_date:
+                            for key in ['open', 'high', 'low', 'close', 'volume']:
+                                value_str = candle.get(key, '').strip()
+                                if value_str:
+                                    try:
+                                        candle[key] = float(value_str)
+                                    except (ValueError, TypeError):
+                                        candle[key] = 0.0 
+                                else:
+                                    candle[key] = 0.0
+                            candles.append(candle)
+                    except Exception as e:
+                        print(f"Warning: Error processing candle line in {file_path}: {e}. Line: {line.strip()}")
+                        continue 
 
-    # Initialize the progress bar
-    pbar = tqdm(total=total_minutes, desc='Loading candles data', unit='minute')
+    except FileNotFoundError:
+        print(f"Error: Candles file not found at {file_path}")
+        return [] 
+    except Exception as e:
+        print(f"Error loading candles from {file_path}: {e}")
+        return [] 
 
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
-        headers = lines[0].strip().split(',')
-        for line in lines[1:]:
-            values = line.strip().split(',')
-            candle = {col: val for col, val in zip(headers, values)}
-            candle['timestamp'] = datetime.strptime(candle['timestamp'], '%Y-%m-%d %H:%M:%S')
-            if candle['timestamp'] > end_date:
-                break
-            pbar.update(1)  # Update progress bar for every minute checked
-            if start_date <= candle['timestamp'] <= end_date:
-                candles.append(candle)
-
-    pbar.close()  # Close the progress bar
+    print(f"Loaded {len(candles)} candles within the specified date range.")
     return candles
 
 def load_state(output_folder):
+    # Initialize default return values
     minute_log = []
     trade_log = []
     open_positions = []
-    current_month = starting_date.month
-    latest_date = starting_date
-    total_long_position = 0
-    total_short_position = 0
-    long_cost_basis = 0
-    short_cost_basis = 0
-    cash_on_hand = starting_bankroll
+    # Attempt to get starting_date from config, handle potential import issues gracefully
+    try:
+        from config import starting_date as config_starting_date
+        current_month = config_starting_date.month
+        latest_date = config_starting_date
+    except ImportError:
+        print("Warning: Could not import starting_date from config.py for load_state defaults.")
+        # Set reasonable defaults or raise an error if config is critical
+        current_month = datetime.now().month 
+        latest_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    except AttributeError:
+         print("Warning: starting_date not found in config.py for load_state defaults.")
+         current_month = datetime.now().month 
+         latest_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+    total_long_position = 0.0
+    total_short_position = 0.0
+    long_cost_basis = 0.0
+    short_cost_basis = 0.0
+    
+    # Attempt to get starting_bankroll from config
+    try:
+        from config import starting_bankroll as config_starting_bankroll
+        # --- Ensure the value from config is treated as a float --- 
+        cash_on_hand = float(config_starting_bankroll)
+        # -----------------------------------------------------------
+    except ImportError:
+        print("Warning: Could not import starting_bankroll from config.py for load_state defaults.")
+        cash_on_hand = 0.0 # Default if not found
+    except AttributeError:
+        print("Warning: starting_bankroll not found in config.py for load_state defaults.")
+        cash_on_hand = 0.0
+    except ValueError: # Catch error if config value isn't a valid float string
+        print(f"Warning: starting_bankroll in config.py ('{config_starting_bankroll}') is not a valid number. Using 0.0.")
+        cash_on_hand = 0.0
+
+
+    analysis_files = []
+    trades_files = []
+    open_positions_file = os.path.join(output_folder, 'open_positions.csv')
+    
+    state_loaded = False # Flag to indicate if state was successfully loaded
 
     if os.path.exists(output_folder):
         try:
-            # Load the latest files for analysis, trades, and open positions
-            analysis_files = sorted([f for f in os.listdir(output_folder) if f.startswith('analysis_')])
-            trades_files = sorted([f for f in os.listdir(output_folder) if f.startswith('trades_')])
-            open_positions_file = os.path.join(output_folder, 'open_positions.csv')
+            analysis_files = sorted([f for f in os.listdir(output_folder) if f.startswith('analysis_') and f.endswith('.csv')])
+            trades_files = sorted([f for f in os.listdir(output_folder) if f.startswith('trades_') and f.endswith('.csv')]) # Assuming trades files exist
 
-            if analysis_files and trades_files:
-                # Load the open positions
-                if os.path.exists(open_positions_file):
-                    with open(open_positions_file, 'r') as file:
-                        lines = file.readlines()
+            # Load open positions first, as they don't depend on other logs
+            if os.path.exists(open_positions_file):
+                with open(open_positions_file, 'r') as file:
+                    lines = file.readlines()
+                    if len(lines) > 1: # Check if there's data beyond the header
                         headers = lines[0].strip().split(',')
-                        open_positions = [dict(zip(headers, line.strip().split(','))) for line in lines[1:]]
+                        # Use list comprehension for efficiency
+                        open_positions = [dict(zip(headers, line.strip().split(','))) for line in lines[1:] if line.strip()]
+                        # Process loaded open positions (convert types)
+                        processed_positions = [] # Store successfully processed positions
                         for pos in open_positions:
-                            if isinstance(pos['trade_date'], str) and pos['trade_date']:
-                                pos['trade_date'] = datetime.strptime(pos['trade_date'], '%Y-%m-%d %H:%M:%S')
-                            if isinstance(pos['Completed Date'], str) and pos['Completed Date']:
-                                pos['Completed Date'] = datetime.strptime(pos['Completed Date'], '%Y-%m-%d %H:%M:%S')
-                            pos['Position Size'] = float(pos['Position Size'])
-                            pos['Open Price'] = float(pos['Open Price'])
+                            try:
+                                # Convert dates robustly
+                                for date_key in ['trade_date', 'Completed Date', 'confirm_date', 'active_date']: # Added confirm/active
+                                    date_str = pos.get(date_key, '').strip()
+                                    if date_str:
+                                         # More flexible date parsing if needed, assuming standard format for now
+                                        pos[date_key] = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                                    else:
+                                        pos[date_key] = None
+                                # Convert numeric values robustly
+                                for num_key in ['Position Size', 'Open Price', 'Target Price']: # Added Target Price
+                                    num_str = pos.get(num_key, '').strip()
+                                    pos[num_key] = float(num_str) if num_str else 0.0 # Default to 0.0 if missing/empty
+                                
+                                # Ensure required keys exist after potential failures
+                                if all(k in pos for k in headers): # Check if all original headers are still keys
+                                     processed_positions.append(pos)
+                                else:
+                                     print(f"Warning: Skipping open position entry due to missing keys after processing. Data: {pos}")
 
-                # Load the most recent values for minute_log and trade_log
-                latest_analysis_file = analysis_files[-1]
-                latest_trades_file = trades_files[-1]
+                            except (ValueError, TypeError, KeyError) as e:
+                                print(f"Warning: Error processing open position entry: {e}. Data: {pos}. Skipping entry.")
+                                continue # Skip this problematic position
+                        open_positions = processed_positions # Update with only valid positions
 
-                with open(os.path.join(output_folder, latest_analysis_file), 'r') as file:
+
+            # Load state from the latest analysis file if it exists
+            if analysis_files:
+                latest_analysis_file = os.path.join(output_folder, analysis_files[-1])
+                with open(latest_analysis_file, 'r') as file:
                     lines = file.readlines()
-                    if len(lines) > 1:
-                        minute_log.append(lines[-1].strip().split(','))  # Ensure we don’t include the last record unnecessarily
+                    if len(lines) > 1: # Check if there's data beyond the header
+                         # Define expected headers based on simulation.py log format
+                        analysis_headers = ['timestamp', 'total_bankroll', 'cash_on_hand', 
+                                            'total_long_position', 'long_cost_basis', 'long_pnl', 
+                                            'total_short_position', 'short_cost_basis', 'short_pnl', 'close']
+                        last_line_values = lines[-1].strip().split(',')
+                        
+                        if len(last_line_values) == len(analysis_headers):
+                            last_record_dict = dict(zip(analysis_headers, last_line_values))
+                            
+                            # Restore state variables robustly
+                            try:
+                                latest_date_str = last_record_dict.get('timestamp', '').strip()
+                                if latest_date_str:
+                                    latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d %H:%M:%S')
+                                    current_month = latest_date.month # Update current_month from loaded date
+                                else:
+                                     raise ValueError("Missing or empty timestamp in last analysis record")
+                                     
+                                minute_log_entry = {
+                                    'timestamp': latest_date, # This is a datetime object
+                                    # --- Ensure numeric values are floats --- 
+                                    'cash_on_hand': float(last_record_dict.get('cash_on_hand', cash_on_hand)), 
+                                    'total_long_position': float(last_record_dict.get('total_long_position', 0.0)),
+                                    'long_cost_basis': float(last_record_dict.get('long_cost_basis', 0.0)),        
+                                    'total_short_position': float(last_record_dict.get('total_short_position', 0.0)),
+                                    'short_cost_basis': float(last_record_dict.get('short_cost_basis', 0.0)),      
+                                    'long_pnl': float(last_record_dict.get('long_pnl', 0.0)),                     
+                                    'short_pnl': float(last_record_dict.get('short_pnl', 0.0)) 
+                                    # --------------------------------------                     
+                                }
+                                minute_log = [minute_log_entry] # minute_log is a list containing this dict
+                                cash_on_hand = minute_log_entry['cash_on_hand']
+                                total_long_position = minute_log_entry['total_long_position']
+                                long_cost_basis = minute_log_entry['long_cost_basis']
+                                total_short_position = minute_log_entry['total_short_position']
+                                short_cost_basis = minute_log_entry['short_cost_basis']
+                                
+                                state_loaded = True # State successfully loaded
+                            except (ValueError, TypeError, KeyError) as e:
+                                print(f"Warning: Error parsing last analysis record: {e}. Data: {last_line_values}")
+                                # Reset relevant state variables if parsing fails?
+                                # Or rely on defaults set earlier.
 
-                with open(os.path.join(output_folder, latest_trades_file), 'r') as file:
-                    lines = file.readlines()
-                    headers = lines[0].strip().split(',')
-                    trade_log.append(dict(zip(headers, lines[-1].strip().split(','))))
+                        else: # Corrected indentation for this else block
+                             print(f"Warning: Mismatched columns in last analysis record of {analysis_files[-1]}. Expected {len(analysis_headers)}, got {len(last_line_values)}. Cannot load state from this record.")
 
-                # Update current month and latest date
-                current_month = int(latest_analysis_file.split('_')[1][:6])
-                current_date_str = minute_log[-1][0]
-                if current_date_str:
-                    latest_date = datetime.strptime(current_date_str, '%Y-%m-%d %H:%M:%S')
-                else:
-                    raise ValueError("Empty timestamp in minute log")
-
-                # Restore the positions and cash
-                last_record = minute_log[-1]
-                cash_on_hand = float(last_record[2])
-                total_long_position = float(last_record[3])
-                long_cost_basis = float(last_record[4])
-                total_short_position = float(last_record[6])
-                short_cost_basis = float(last_record[7])
-
-                # Print state stats to console
-                print(f"Loaded state with {len(open_positions)} open positions")
-                print(f"Variables loaded: current_month={current_month}, latest_date={latest_date}, total_long_position={total_long_position}, total_short_position={total_short_position}, long_cost_basis={long_cost_basis}, short_cost_basis={short_cost_basis}, cash_on_hand={cash_on_hand}")
+            # Corrected indentation for this block: Moved inside the main 'try'
+            if state_loaded:
+                 print(f"Loaded state from {analysis_files[-1]} with {len(open_positions)} open positions.")
+                 print(f"State: latest_date={latest_date}, cash={cash_on_hand:.2f}, long_pos={total_long_position:.4f}, short_pos={total_short_position:.4f}")
 
         except Exception as e:
-            print(f"Error loading state: {e}")
+            print(f"Error loading state from {output_folder}: {e}")
+            # Return None or default values to indicate failure
+            return None # Or return the potentially partially loaded state if that's desired
 
-            return None
-
-    return (minute_log, trade_log, open_positions, current_month, latest_date,
-            total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand)
+    # Return loaded state only if successful, otherwise None or defaults
+    if state_loaded:
+         # Return as dictionary for clarity
+         return {
+            'minute_log': minute_log, # Contains only the last entry dict
+            'trade_log': trade_log,   # Currently empty unless loaded above
+            'open_positions': open_positions,
+            'current_month': current_month,
+            'current_date': latest_date, # Renamed from latest_date for consistency with main.py usage
+            'total_long_position': total_long_position,
+            'total_short_position': total_short_position,
+            'long_cost_basis': long_cost_basis,
+            'short_cost_basis': short_cost_basis,
+            'cash_on_hand': cash_on_hand
+        }
+    else:
+        print("No valid saved state found or error during loading.")
+        return None # Indicate no state loaded
 
 def initialize_trades_all(output_folder):
     trades_all_path = os.path.join(output_folder, 'trades_all.csv')
     trades_all = []
 
     if os.path.exists(trades_all_path):
-        with open(trades_all_path, 'r') as file:
-            lines = file.readlines()
-            headers = lines[0].strip().split(',')
-            for line in lines[1:]:
-                values = line.strip().split(',')
-                trade_entry = {col: val for col, val in zip(headers, values)}
-                trades_all.append(trade_entry)
+        try:
+            with open(trades_all_path, 'r') as file:
+                lines = file.readlines()
+                if len(lines) > 1: 
+                    headers = lines[0].strip().split(',')
+                    processed_trades = [] 
+                    # --- Define numeric columns to convert --- 
+                    numeric_columns = ['Open Price', 'Close Price', 'Position Size', 'PnL', 'Fee', 'slippage_adj_price'] # Add other numeric columns as needed
+                    # -----------------------------------------
+                    for line in lines[1:]:
+                        if not line.strip(): continue 
+                        values = line.strip().split(',')
+                        if len(values) == len(headers):
+                            trade_entry = dict(zip(headers, values))
+                            # --- Convert numeric strings to floats --- 
+                            for col in numeric_columns:
+                                if col in trade_entry:
+                                    try:
+                                        # Handle empty strings or non-numeric values gracefully
+                                        value_str = trade_entry[col].strip()
+                                        trade_entry[col] = float(value_str) if value_str else 0.0
+                                    except (ValueError, TypeError):
+                                        print(f"Warning: Could not convert value '{trade_entry[col]}' in column '{col}' to float. Using 0.0. Line: {line.strip()}")
+                                        trade_entry[col] = 0.0 # Default to 0.0 on conversion error
+                            # --- Convert date strings to datetime objects ---
+                            # Add date conversions if needed, similar to load_state
+                            # Example:
+                            # date_columns = ['trade_date', 'Completed Date']
+                            # for col in date_columns:
+                            #    if col in trade_entry and trade_entry[col]:
+                            #        try:
+                            #            trade_entry[col] = datetime.strptime(trade_entry[col], '%Y-%m-%d %H:%M:%S') # Adjust format as needed
+                            #        except (ValueError, TypeError):
+                            #            print(f"Warning: Could not convert date '{trade_entry[col]}' in column '{col}'. Keeping as string or setting None.")
+                            #            trade_entry[col] = None # Or keep original string
+                            # ---------------------------------------------
+                            processed_trades.append(trade_entry)
+                        else:
+                            print(f"Warning: Skipping malformed line in trades_all.csv. Expected {len(headers)} columns, got {len(values)}. Line: {line.strip()}")
+                    trades_all = processed_trades 
+
+        except Exception as e:
+            print(f"Error loading trades_all.csv from {output_folder}: {e}")
+            return []
 
     return trades_all

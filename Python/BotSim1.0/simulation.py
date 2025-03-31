@@ -23,39 +23,36 @@ def chunk_by_month(day_candles):
         chunks[month].append(candle)
     return chunks
 
-def run_simulation(instances, candles, starting_date, ending_date, output_folder, fee_rate, trades_all, minute_log, trade_log, open_positions):
-    # Initialize variables to keep track of positions and balances
-    total_long_position = 0
-    total_short_position = 0
-    long_cost_basis = 0
-    short_cost_basis = 0
-    long_pnl = 0
-    short_pnl = 0
-    cash_on_hand = starting_bankroll
+# --- Helper function to format seconds --- 
+def _format_seconds(seconds):
+    """Formats seconds into HH:MM:SS string."""
+    if seconds is None or seconds < 0:
+        return "?"
+    try:
+        td = timedelta(seconds=int(seconds))
+        # str(td) gives HH:MM:SS or H:MM:SS - we want consistent HH:MM:SS
+        parts = str(td).split(':')
+        if len(parts) == 3:
+            h, m, s = parts
+            return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
+        else: # Handle cases like H:MM:SS or just seconds
+             return str(td) # Fallback to default timedelta string
+    except (ValueError, TypeError):
+        return "?"
+# ----------------------------------------
 
-    # Use the state values passed in from main.py instead of loading again
-    if len(minute_log) > 0:
-        # Extract values from the minute_log if it exists
-        current_month = int(starting_date.strftime('%Y%m'))
-        latest_date = starting_date
-        
-        # If we have minute_log entries, update our tracking variables
-        if isinstance(minute_log[0], dict):
-            # New format (dictionary)
-            latest_date = minute_log[0]['timestamp']
-            cash_on_hand = minute_log[0]['cash_on_hand']
-            total_long_position = minute_log[0]['total_long_position']
-            long_cost_basis = minute_log[0]['long_cost_basis']
-            total_short_position = minute_log[0]['total_short_position']
-            short_cost_basis = minute_log[0]['short_cost_basis']
-        elif len(minute_log[0]) >= 8:  
-            # Old format (list)
-            latest_date = datetime.strptime(minute_log[0][0], '%Y-%m-%d %H:%M:%S')
-            cash_on_hand = float(minute_log[0][2])
-            total_long_position = float(minute_log[0][3])
-            long_cost_basis = float(minute_log[0][4])
-            total_short_position = float(minute_log[0][6])
-            short_cost_basis = float(minute_log[0][7])
+def run_simulation(instances_by_minute, candles, starting_date, ending_date, output_folder, fee_rate, 
+                   trades_all, trade_log, open_positions, 
+                   initial_cash_on_hand, initial_total_long, initial_long_basis, 
+                   initial_total_short, initial_short_basis, initial_long_pnl=0.0, initial_short_pnl=0.0):
+    # Initialize variables to keep track of positions and balances
+    total_long_position = float(initial_total_long)
+    total_short_position = float(initial_total_short)
+    long_cost_basis = float(initial_long_basis)
+    short_cost_basis = float(initial_short_basis)
+    cash_on_hand = float(initial_cash_on_hand)
+    long_pnl = float(initial_long_pnl)
+    short_pnl = float(initial_short_pnl)
 
     # Create progress bar for the entire date range
     total_minutes = int((ending_date - starting_date).total_seconds() // 60)
@@ -66,6 +63,7 @@ def run_simulation(instances, candles, starting_date, ending_date, output_folder
     monthly_chunks = chunk_by_month(day_candles)
 
     # Process each monthly chunk
+    minute_log = []
     for month, candles_chunk in monthly_chunks.items():
         # Simulation for each month
         for minute_data in candles_chunk:
@@ -73,9 +71,16 @@ def run_simulation(instances, candles, starting_date, ending_date, output_folder
             if isinstance(minute_data['timestamp'], str):
                 minute_data['timestamp'] = datetime.strptime(minute_data['timestamp'], '%Y-%m-%d %H:%M:%S')
 
+            # --- Optimization: Get instances only for the current minute ---
+            current_minute_dt = minute_data['timestamp']
+            # Key format should match the one used in load_instances
+            minute_key = current_minute_dt # Assuming load_instances uses datetime objects as keys
+            relevant_instances = instances_by_minute.get(minute_key, []) 
+            # --------------------------------------------------------------
+
             # Check for trades to take
             total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = sim_entries(
-                minute_data, instances, float(fee_rate), trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder)
+                minute_data, relevant_instances, float(fee_rate), trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder)
 
             # Check for trades to close 
             total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, long_pnl, short_pnl = sim_exits(
@@ -111,6 +116,27 @@ def run_simulation(instances, candles, starting_date, ending_date, output_folder
 
             # Update progress bar by 1 minute each iteration
             pbar_minutes.update(1)
+            
+            fmt_dict = pbar_minutes.format_dict
+            n = fmt_dict['n']
+            total = fmt_dict['total']
+            elapsed = fmt_dict['elapsed']
+            rate_fmt = fmt_dict.get('rate_fmt') # Default rate (potentially smoothed)
+            remaining_seconds = fmt_dict.get('remaining') # Default ETA seconds
+            remaining_fmt = _format_seconds(remaining_seconds) # ETA formatted
+
+            if elapsed > 0 and n > 0:
+                avg_rate = n / elapsed # Overall average rate
+                eta_stable_seconds = (elapsed / n * (total - n)) # ETA based on average rate
+                # Construct the desired compact postfix string
+                postfix_str = (
+                    f"{rate_fmt} | " # Default rate
+                    f"Avg: {_format_seconds(elapsed)}<{_format_seconds(eta_stable_seconds)}, {avg_rate:.2f}min/s" # Avg elapsed<stable ETA, Avg rate
+                )
+                pbar_minutes.set_postfix_str(postfix_str, refresh=False) # Update postfix without forcing refresh
+            else:
+                 pbar_minutes.set_postfix_str("Calculating...", refresh=False)
+
             # Update the progress bar description with the current date
             pbar_minutes.set_description(f"Processing {minute_data['timestamp'].strftime('%Y-%m-%d')}")
 

@@ -77,9 +77,9 @@ def compare_timestamps_ignore_seconds(ts1, ts2):
         except Exception:
             return False
 
-def sim_entries(minute_data, instances, fee_rate, trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder):
+def sim_entries(minute_data, relevant_instances, fee_rate, trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder):
     # Check for regular trade entries first
-    active_trades = [trade for trade in instances if trade['Active Date'] is not None and 
+    active_trades = [trade for trade in relevant_instances if trade['Active Date'] is not None and 
                      compare_timestamps_ignore_seconds(trade['Active Date'], minute_data['timestamp'])]
     for trade in active_trades:
         # Check if trade meets the minimum pending age requirement

@@ -2,6 +2,7 @@ import os
 import csv
 from datetime import datetime, timedelta
 from log_utils import analyze_monthly_data, sort_timeframes
+from tqdm import tqdm
 
 def calculate_current_positions(trades_file, end_date):
     current_longs, current_shorts = 0, 0
@@ -83,7 +84,8 @@ def generate_summary_report(output_folder, starting_date, ending_date):
 
     cumulative_longs, cumulative_shorts = 0, 0
 
-    for month in months:
+    # Wrap the months iteration with tqdm for progress bar
+    for month in tqdm(months, desc="Generating Monthly Summaries"):
         analysis_file = os.path.join(output_folder, f'analysis_{month}.csv')
         open_positions_file = os.path.join(output_folder, 'open_positions.csv')
         

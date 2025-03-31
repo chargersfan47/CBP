@@ -82,15 +82,20 @@ if __name__ == "__main__":
 
             # Load data with progress bar
             # print("Loading instances data...")
-            instances = load_instances(instances_folder, current_date, ending_date)
+            instances_by_minute = load_instances(instances_folder, current_date, ending_date)
             # print("\n")  # Add CR/LF after progress bar completes
 
-            # print("Loading candles data...")
+            print("Loading candles data...")
             candles = load_candles(candles_file, current_date, ending_date)
-            # print("\n")  # Add CR/LF after progress bar completes
 
-            # Run the simulation
-            run_simulation(instances, candles, current_date, ending_date, output_folder, fee_rate, trades_all, minute_log, trade_log, open_positions)
+            # Run the simulation for a new run
+            run_simulation(instances_by_minute, candles, current_date, ending_date, 
+                           output_folder, fee_rate, trades_all, trade_log, open_positions,
+                           initial_cash_on_hand=starting_bankroll, # Use starting bankroll from config
+                           initial_total_long=0.0,
+                           initial_long_basis=0.0,
+                           initial_total_short=0.0,
+                           initial_short_basis=0.0)
 
             break
 
@@ -98,17 +103,19 @@ if __name__ == "__main__":
             trades_all = initialize_trades_all(output_folder)
             state = load_state(output_folder)
             if state:
-                (minute_log, trade_log, open_positions, current_month, current_date, 
-                 total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand) = state
+                # Correctly unpack the state dictionary using keys
+                # minute_log is intentionally not unpacked here as run_simulation no longer uses it
+                trade_log = state['trade_log'] 
+                open_positions = state['open_positions']
+                current_month = state['current_month']
+                current_date = state['current_date']
+                total_long_position = state['total_long_position']
+                total_short_position = state['total_short_position']
+                long_cost_basis = state['long_cost_basis']
+                short_cost_basis = state['short_cost_basis']
+                cash_on_hand = state['cash_on_hand']
 
-                # Ensure that all loaded trades are part of the trade_log - this can be time-consuming
-                print(f"Processing trade history ({len(trades_all)} trades to check)...")
-                if len(trades_all) > 0:  # Only show progress bar if there are trades to process
-                    for trade in tqdm(trades_all, desc="Updating trade history"):
-                        if trade not in trade_log:
-                            trade_log.append(trade)
-    
-                # Prompt for new end date
+                # Prompt for new end date FIRST
                 new_end_date_str = input(f"Enter new end date (YYYY-MM-DD or YYYYMMDD) [current: {ending_date.strftime('%Y-%m-%d')}]: ")
                 if new_end_date_str:
                     # Handle different date formats
@@ -121,24 +128,55 @@ if __name__ == "__main__":
                     except ValueError:
                         print("Invalid date format. Please try again.")
                         continue
+                # If no new date entered, ending_date remains as loaded from config or previous state
+                
+                # Now process trade history AFTER getting the new end date
+                print("Processing trade history for PnL...")
+                trade_log_set = set(trade['trade_id'] for trade in trade_log) # Use set for O(1) lookup
+                for trade in tqdm(trades_all, desc='Processing historical trades'):
+                    if trade['trade_id'] not in trade_log_set:
+                        trade_log.append(trade)
+                        trade_log_set.add(trade['trade_id']) # Keep the set updated
 
-                # Increment the current_date to start processing from the next day at 00:00
-                current_date = (current_date + timedelta(days=1)).replace(hour=0, minute=0, second=0)
-
-                # Load data with progress bar
-                print("Loading instances data...")
-                instances = load_instances(instances_folder, current_date, ending_date)
-    
-                print("Loading candles data...")
+                # Reload instances and candles for the new date range
+                print("Reloading instances data for the specified range...")
+                instances_by_minute = load_instances(instances_folder, current_date, ending_date)
+                print("Reloading candles data for the specified range...")
                 candles = load_candles(candles_file, current_date, ending_date)
-    
-                # Run the simulation
-                run_simulation(instances, candles, current_date, ending_date, output_folder, fee_rate, trades_all, minute_log, trade_log, open_positions)
 
-                break
+                # Run the simulation with the loaded state
+                run_simulation(instances_by_minute, candles, current_date, ending_date, 
+                               output_folder, fee_rate, trades_all, trade_log, open_positions, 
+                               initial_cash_on_hand=cash_on_hand, 
+                               initial_total_long=total_long_position, 
+                               initial_long_basis=long_cost_basis, 
+                               initial_total_short=total_short_position, 
+                               initial_short_basis=short_cost_basis)
             else:
-                print("No saved state found. Starting a new simulation.")
-                continue
+                print("Could not load saved state. Starting fresh.")
+                # Fallback to starting fresh or handle error as needed
+                # Resetting variables needed for a fresh start
+                current_date = starting_date
+                open_positions = []
+                trade_log = []
+                trades_all = []
+                minute_log = []
+                cash_on_hand = starting_bankroll 
+                total_long_position = 0.0
+                long_cost_basis = 0.0
+                total_short_position = 0.0
+                short_cost_basis = 0.0
+                # Ensure trades_all is initialized if needed for fresh start
+                # trades_all = initialize_trades_all(output_folder) # Or leave empty
+                run_simulation(instances_by_minute, candles, current_date, ending_date, 
+                               output_folder, fee_rate, trades_all, trade_log, open_positions,
+                               initial_cash_on_hand=cash_on_hand, 
+                               initial_total_long=total_long_position, 
+                               initial_long_basis=long_cost_basis, 
+                               initial_total_short=total_short_position, 
+                               initial_short_basis=short_cost_basis)
+
+            break # Exit loop after processing 'C'
 
         elif user_choice == 'S':
             # Generate summary report directly from the CSV files
@@ -156,4 +194,4 @@ if __name__ == "__main__":
             prompt_dates()
 
         else:
-            print("Invalid input. Please enter 'N', 'C', 'S', 'P', or 'D'.")
+            print("Invalid input. Please enter 'N', 'C', 'S', 'P', or 'D.'")
