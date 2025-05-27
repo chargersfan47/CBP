@@ -4,22 +4,25 @@ from tqdm import tqdm
 from config import *
 
 def load_instances(instances_folder, start_date, end_date):
-    instances_by_minute = {}  
+    import config
+    
+    instances_by_minute = {}
     filenames = [filename for filename in os.listdir(instances_folder) if filename.endswith('.csv')]
     
     with tqdm(filenames, desc='Loading instances data') as pbar:
         for filename in pbar:
-            timeframe = filename.split('_')[-1].replace('.csv', '')  
+            timeframe = filename.split('_')[-1].replace('.csv', '')
             try:
                 with open(os.path.join(instances_folder, filename), 'r') as file:
                     lines = file.readlines()
                     if not lines: 
                         continue
-                    headers = lines[0].strip().split(',')
-                    data = [dict(zip(headers, line.strip().split(','))) for line in lines[1:] if line.strip()]
+                    headers = [h.strip() for h in lines[0].strip().split(',')]
+                    data = [dict(zip(headers, [x.strip() for x in line.strip().split(',')])) for line in lines[1:] if line.strip()]
                     
                     for entry in data:
                         try:
+                            # Parse dates
                             confirm_date_str = entry.get('confirm_date', '').strip()
                             if confirm_date_str:
                                 date_format = '%Y-%m-%d %H:%M:%S' if ' ' in confirm_date_str else '%Y-%m-%d'
@@ -28,7 +31,7 @@ def load_instances(instances_folder, start_date, end_date):
                                     confirm_dt = confirm_dt.replace(hour=0, minute=0, second=0)
                                 entry['confirm_date'] = confirm_dt
                             else:
-                                entry['confirm_date'] = None 
+                                entry['confirm_date'] = None
 
                             active_date_str = entry.get('Active Date', '').strip()
                             if active_date_str:
@@ -42,6 +45,7 @@ def load_instances(instances_folder, start_date, end_date):
                             else:
                                 entry['Completed Date'] = None
                             
+                            # Parse date fields
                             date_fields = [
                                 'DateReached0.5', 'DateReached0.0', 
                                 'DateReached-0.5', 'DateReached-1.0'
@@ -52,31 +56,38 @@ def load_instances(instances_folder, start_date, end_date):
                                     try:
                                         entry[field] = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
                                     except (ValueError, TypeError):
-                                        entry[field] = None 
+                                        entry[field] = None
                                 else:
                                     entry[field] = None
 
+                            # Parse numeric fields
                             for key in ['Entry', 'target', 'entry', 'fib0.5', 'fib0.0', 'fib-0.5', 'fib-1.0']: 
                                 value_str = entry.get(key, '').strip()
                                 if value_str:
                                     try:
                                         entry[key] = float(value_str)
                                     except (ValueError, TypeError):
-                                         entry[key] = None 
+                                        entry[key] = None
                                 else:
                                     entry[key] = None
 
                             entry['Timeframe'] = timeframe
                             
+                            # Skip if we're avoiding groups and this entry has a group
                             if AVOID_GROUPS and entry.get('group_id', 'NA') != 'NA':
-                                continue  
-
+                                continue
+                                
                             active_date = entry.get('Active Date')
-                            if active_date and start_date <= active_date <= end_date:
-                                activation_minute = active_date.replace(second=0, microsecond=0)
-                                if activation_minute not in instances_by_minute:
-                                    instances_by_minute[activation_minute] = []
-                                instances_by_minute[activation_minute].append(entry)
+                            
+                            # If any of the FULL_INSTANCE_SET_FLAGS are True, we need to load all instances
+                            # regardless of date. Otherwise, only load instances with active dates in our range
+                            needs_full_set = any(getattr(config, flag, False) for flag in FULL_INSTANCE_SET_FLAGS)
+                            if needs_full_set or (active_date and start_date <= active_date <= end_date):
+                                activation_minute = active_date.replace(second=0, microsecond=0) if active_date else None
+                                if activation_minute is not None:  # Only add if we have a valid activation minute
+                                    if activation_minute not in instances_by_minute:
+                                        instances_by_minute[activation_minute] = []
+                                    instances_by_minute[activation_minute].append(entry)
                         except Exception as e:
                              print(f"\nWarning: Skipping entry due to error in file {filename}: {e}. Entry data: {entry}")
                              continue 
@@ -222,9 +233,17 @@ def load_state(output_folder):
                                     else:
                                         pos[date_key] = None
                                 # Convert numeric values robustly
-                                for num_key in ['Position Size', 'Open Price', 'Target Price']: # Added Target Price
-                                    num_str = pos.get(num_key, '').strip()
-                                    pos[num_key] = float(num_str) if num_str else 0.0 # Default to 0.0 if missing/empty
+                                numeric_fields = [
+                                    'Position Size', 'Open Price', 'Target Price',
+                                    'ampd_p_value', 'ampd_t_value'  # Add AMPD fields
+                                ]
+                                for num_key in numeric_fields:
+                                    if num_key in pos:  # Only process if the key exists
+                                        num_str = pos.get(num_key, '').strip()
+                                        try:
+                                            pos[num_key] = float(num_str) if num_str else 0.0
+                                        except (ValueError, TypeError):
+                                            pos[num_key] = 0.0  # Default to 0.0 if conversion fails
                                 
                                 # Ensure required keys exist after potential failures
                                 if all(k in pos for k in headers): # Check if all original headers are still keys
@@ -331,38 +350,74 @@ def initialize_trades_all(output_folder):
                     headers = lines[0].strip().split(',')
                     processed_trades = [] 
                     # --- Define numeric columns to convert --- 
-                    numeric_columns = ['Open Price', 'Close Price', 'Position Size', 'PnL', 'Fee', 'slippage_adj_price'] # Add other numeric columns as needed
-                    # -----------------------------------------
+                    # Define a mapping of source columns to their normalized names
+                    # Only include columns that are actually used in calculations
+                    numeric_columns = {
+                        'Position Size': 'position_size',
+                        'price': 'price',
+                        'PnL': 'pnl',
+                        'Fee': 'fee',
+                        'units_traded': 'units_traded',
+                        'realized_PnL': 'realized_pnl',
+                        'total_long_position': 'total_long_position',
+                        'total_short_position': 'total_short_position',
+                        'long_cost_basis': 'long_cost_basis',
+                        'short_cost_basis': 'short_cost_basis',
+                        'balance': 'balance',
+                        'ind_PnL': 'ind_pnl'
+                    }
+                    import csv
+                    
                     for line in lines[1:]:
-                        if not line.strip(): continue 
-                        values = line.strip().split(',')
-                        if len(values) == len(headers):
+                        if not line.strip():
+                            continue
+                            
+                        try:
+                            reader = csv.reader([line])
+                            values = next(reader)
+                            
+                            if len(values) > len(headers):
+                                values = values[:len(headers)]
+                            elif len(values) < len(headers):
+                                values.extend([''] * (len(headers) - len(values)))
+                            
                             trade_entry = dict(zip(headers, values))
-                            # --- Convert numeric strings to floats --- 
-                            for col in numeric_columns:
-                                if col in trade_entry:
+                            
+                            # Only convert columns we know should be numeric
+                            for src_col, dest_col in numeric_columns.items():
+                                if src_col in trade_entry and trade_entry[src_col]:
                                     try:
-                                        # Handle empty strings or non-numeric values gracefully
-                                        value_str = trade_entry[col].strip()
-                                        trade_entry[col] = float(value_str) if value_str else 0.0
+                                        if isinstance(trade_entry[src_col], str):
+                                            value_str = trade_entry[src_col].strip()
+                                            trade_entry[dest_col] = float(value_str) if value_str else 0.0
+                                        elif isinstance(trade_entry[src_col], (int, float)):
+                                            trade_entry[dest_col] = float(trade_entry[src_col])
+                                        else:
+                                            trade_entry[dest_col] = 0.0
+                                    except (ValueError, TypeError) as e:
+                                        # Only warn for columns we actually need
+                                        if src_col in ['total_long_position', 'total_short_position', 'balance']:
+                                            print(f"Warning: Could not convert {src_col} to number: {trade_entry[src_col]}. Using 0.0")
+                                        trade_entry[dest_col] = 0.0
+                            date_columns = [
+                                'confirm_date', 'active_date', 'trade_date', 'completed_date',
+                                'extreme_price_date', 'tt_confirm_date', 'tt_active_date', 'tt_completed_date',
+                                'timestamp', 'date', 'time', 'entry_date', 'exit_date'
+                            ]
+                            for col in date_columns:
+                                if col in trade_entry and trade_entry[col]:
+                                    try:
+                                        if isinstance(trade_entry[col], str):
+                                            trade_entry[col] = datetime.strptime(trade_entry[col], '%Y-%m-%d %H:%M:%S')
                                     except (ValueError, TypeError):
-                                        print(f"Warning: Could not convert value '{trade_entry[col]}' in column '{col}' to float. Using 0.0. Line: {line.strip()}")
-                                        trade_entry[col] = 0.0 # Default to 0.0 on conversion error
-                            # --- Convert date strings to datetime objects ---
-                            # Add date conversions if needed, similar to load_state
-                            # Example:
-                            # date_columns = ['trade_date', 'Completed Date']
-                            # for col in date_columns:
-                            #    if col in trade_entry and trade_entry[col]:
-                            #        try:
-                            #            trade_entry[col] = datetime.strptime(trade_entry[col], '%Y-%m-%d %H:%M:%S') # Adjust format as needed
-                            #        except (ValueError, TypeError):
-                            #            print(f"Warning: Could not convert date '{trade_entry[col]}' in column '{col}'. Keeping as string or setting None.")
-                            #            trade_entry[col] = None # Or keep original string
-                            # ---------------------------------------------
+                                        print(f"Warning: Could not convert date '{trade_entry[col]}' in column '{col}'. Keeping as string.")
+                                        # Keep the original string value if conversion fails
+                            
                             processed_trades.append(trade_entry)
-                        else:
-                            print(f"Warning: Skipping malformed line in trades_all.csv. Expected {len(headers)} columns, got {len(values)}. Line: {line.strip()}")
+                            
+                        except Exception as e:
+                            print(f"Warning: Error processing line in trades_all.csv: {e}\nLine: {line.strip()}")
+                            continue
                     trades_all = processed_trades 
 
         except Exception as e:

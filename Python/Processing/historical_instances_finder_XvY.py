@@ -8,7 +8,7 @@ from tqdm import tqdm
 from datetime import datetime
 
 # Configurable variable for the minimum percent size of opportunity.  Set this to whatever you want.
-min_diff_percent = 0.004  # 0.4%
+min_diff_percent = 0.001  # 0.1%
 
 # Configurable variable for the maximum number of breaking candles.
 #  Set to 0 for no limit.
@@ -18,15 +18,39 @@ max_y = 1  # Maximum number of breaking candles
 # Default paths (change these to your actual paths). You can put them here or enter them when prompted.
 # Updated to match the new structure used by the download_binance_historical_data.py script:
 default_input_path = os.path.join("..", "..", "Data", "SOLUSDT-BINANCE", "Candles")
-default_output_path = os.path.join("..", "..", "Data", "SOLUSDT-BINANCE", "Instances", "Xv1", "Unprocessed")
+default_output_path = os.path.join("..", "..", "Data", "SOLUSDT-BINANCE", "Instances-Xv1-0.1", "XvY", "Unprocessed")
+
+class ProgressUpdater:
+    def __init__(self, file_pbar, processed_mb, file_size_mb):
+        self.file_pbar = file_pbar
+        self.processed_mb = round(processed_mb, 1)
+        self.file_size_mb = round(file_size_mb, 1)
+    
+    def update_progress(self, progress):
+        # Only update if we've made at least 0.1MB of progress to avoid too many updates
+        current_mb = round(self.processed_mb + (progress * self.file_size_mb), 1)
+        if current_mb > self.file_pbar.n + 0.1 or progress >= 1.0:
+            self.file_pbar.n = current_mb
+            self.file_pbar.refresh()
 
 # **************************************************************************************************
 # Function to find instances and calculate Fibonacci extension levels
-def find_instances(df, timeframe):
+def find_instances(df, timeframe, progress_callback=None):
     instances = []
-
+    total_candles = len(df) - 1
+    
     # Create a progress bar for the file processing
-    candle_pbar = tqdm(total=len(df) - 1, desc=f'Processing candles for {timeframe}', unit='candle', leave=False)
+    candle_pbar = tqdm(
+        total=total_candles,
+        desc=f'Processing candles for {timeframe}',
+        unit='candle',
+        leave=False,
+        bar_format='{desc} {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]'
+    )
+    
+    # Initialize progress tracking
+    last_update = 0
+    update_interval = max(100, total_candles // 20)  # Update at most 20 times per file
 
     i = 0
     while i < len(df) - 1:  # Adjust loop to ensure there's a following candle
@@ -81,7 +105,8 @@ def find_instances(df, timeframe):
                     situation = f"{j - i}v{k - j + 1}"
 
                     # Ensure x >= y before recording the instance
-                    if (j - i) >= (k - j + 1) and abs(target - curr_candle['open']) / curr_candle['open'] >= min_diff_percent:
+                    diff_percent = abs(target - curr_candle['open']) / curr_candle['open']
+                    if (j - i) >= (k - j + 1) and diff_percent >= min_diff_percent:
                         confirm_candle = df.iloc[k + 1] if k + 1 < len(df) else breaking_candle
                         instance_id = f"{confirm_candle.name.strftime('%Y-%m-%d %H:%M:%S')}_{timeframe}_{situation}_short"
                         instances.append({
@@ -95,7 +120,8 @@ def find_instances(df, timeframe):
                             'fib0.5': fib0_5,
                             'fib0.0': fib0_0,
                             'fib-0.5': fibN0_5,
-                            'fib-1.0': fibN1_0
+                            'fib-1.0': fibN1_0,
+                            'move_size': diff_percent
                         })
                     break  # Stop after finding a valid breaking candle
             elif direction == 'bearish':
@@ -111,7 +137,8 @@ def find_instances(df, timeframe):
                     situation = f"{j - i}v{k - j + 1}"
 
                     # Ensure x >= y before recording the instance
-                    if (j - i) >= (k - j + 1) and abs(target - curr_candle['open']) / curr_candle['open'] >= min_diff_percent:
+                    diff_percent = abs(target - curr_candle['open']) / curr_candle['open']
+                    if (j - i) >= (k - j + 1) and diff_percent >= min_diff_percent:
                         confirm_candle = df.iloc[k + 1] if k + 1 < len(df) else breaking_candle
                         instance_id = f"{confirm_candle.name.strftime('%Y-%m-%d %H:%M:%S')}_{timeframe}_{situation}_long"
                         instances.append({
@@ -125,18 +152,25 @@ def find_instances(df, timeframe):
                             'fib0.5': fib0_5,
                             'fib0.0': fib0_0,
                             'fib-0.5': fibN0_5,
-                            'fib-1.0': fibN1_0
+                            'fib-1.0': fibN1_0,
+                            'move_size': diff_percent
                         })
                     break  # Stop after finding a valid breaking candle
 
             k += 1
 
         # Update the progress bar with the correct number of rows processed
-        candle_pbar.update(j - i)
+        rows_processed = j - i
+        candle_pbar.update(rows_processed)
+        
+        # Update progress callback if provided
+        if progress_callback and (i % update_interval == 0 or i == total_candles - 1):
+            progress = i / total_candles
+            progress_callback(progress)
+            
         i = j  # Move to the next candle
 
     candle_pbar.close()
-
     return pd.DataFrame(instances)
 
 # Prompt for the input and output paths
@@ -150,37 +184,61 @@ if not os.path.exists(output_folder):
 total_size_mb = sum(os.path.getsize(os.path.join(input_folder, f)) for f in os.listdir(input_folder) if f.endswith('.csv')) / (1024 * 1024)
 total_size_mb = round(total_size_mb, 2)
 
-# Process each file in the input folder
-files = [f for f in os.listdir(input_folder) if f.endswith('.csv')]
+# Process each file in the input folder, sorted for consistent ordering
+files = sorted([f for f in os.listdir(input_folder) if f.endswith('.csv')])
 total_files = len(files)
 
-# Create a progress bar for the file processing
-file_pbar = tqdm(total=total_size_mb, desc=f'Processing file 0 of {total_files}', unit='MB')
+# Create a progress bar for the file processing with clean number formatting
+file_pbar = tqdm(
+    total=round(total_size_mb, 1),
+    desc=f'Processing file 0 of {total_files}',
+    unit='MB',
+    bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]'
+)
 
-multi_day_instances_file = os.path.join(output_folder, f'instances_XvY_multi-day.csv')
+# Track the total MB processed so far
+processed_mb = 0.0
 
-for idx, filename in enumerate(files, start=1):
-    file_pbar.set_description(f'Processing file {idx} of {total_files}')
+multi_day_instances_file = os.path.join(output_folder, 'instances_XvY_multi-day.csv')
+
+for idx, filename in enumerate(files, 1):
     filepath = os.path.join(input_folder, filename)
     file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
-    file_size_mb = round(file_size_mb, 2)
+    
+    # Create a progress updater instance with rounded values
+    progress_updater = ProgressUpdater(file_pbar, processed_mb, file_size_mb)
+    
+    # Update the progress bar with current file info
+    file_pbar.set_description(f'Processing file {idx} of {total_files}')
+    
     df = pd.read_csv(filepath, parse_dates=['timestamp'])
     df.set_index('timestamp', inplace=True)
-
+    
     timeframe = filename.split('_')[-1].replace('.csv', '')
-    instances_df = find_instances(df, timeframe)
-
+    
+    # Pass the update callback to find_instances
+    instances_df = find_instances(df, timeframe, progress_updater.update_progress)
+    
+    # Save the results
     if 'D' in timeframe and timeframe != '1D':
         if not os.path.exists(multi_day_instances_file):
             instances_df.to_csv(multi_day_instances_file, index=False)
+            tqdm.write(f'{multi_day_instances_file} created with {len(instances_df)} instances')
         else:
             instances_df.to_csv(multi_day_instances_file, mode='a', header=False, index=False)
+            tqdm.write(f'{multi_day_instances_file} updated with {len(instances_df)} {timeframe} instances')
     else:
         output_filepath = os.path.join(output_folder, f'instances_XvY_{filename.split(".")[0]}.csv')
         instances_df.to_csv(output_filepath, index=False)
-        tqdm.write(f'Instances saved to {output_filepath}')
-
-    file_pbar.update(file_size_mb)
+        tqdm.write(f'{output_filepath} created with {len(instances_df)} instances')
+    
+    # Update the total processed MB (round to 1 decimal place)
+    processed_mb = round(processed_mb + file_size_mb, 1)
+    file_pbar.n = processed_mb
+    file_pbar.refresh()
+    
+    # Update the progress bar description to show completed files
+    file_pbar.set_description(f'Processed {idx} of {total_files} files')
 
 file_pbar.close()
 

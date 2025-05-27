@@ -1,7 +1,14 @@
+import os
+import time
+import csv
+import pandas as pd
+from datetime import datetime, timedelta
 from tqdm import tqdm
-from datetime import timedelta, datetime
 from config import *
 from sim_entries import sim_entries
+
+# Convert to set once for O(1) lookups
+ALLOWED_SITUATIONS = set(ALLOWED_SITUATIONS)
 from sim_exits import sim_exits
 from log_utils import write_log_entry, remove_log_entry
 from reporting import generate_summary_report
@@ -11,7 +18,10 @@ from initialization import load_state
 open_positions_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'Completed Date', 'Target Price', 
                          'Position Size', 'Direction', 'Open Price', 'Timeframe', 'Name',
                          'DateReached0.5', 'DateReached0.0', 'DateReached-0.5', 'DateReached-1.0',
-                         'fib0.5', 'fib0.0', 'fib-0.5', 'fib-1.0', 'instance_id']
+                         'fib0.5', 'fib0.0', 'fib-0.5', 'fib-1.0', 'instance_id',
+                         'maxdrawdown', 'maxfib', 'maxdrawdown_date', 'max_position_drawdown',
+                         'tt_instance_id', 'tt_confirm_date', 'tt_active_date', 'tt_completed_date', 'tt_entry_price',
+                         'ampd_p_value', 'ampd_t_value']
 analysis_columns = ['timestamp', 'total_bankroll', 'cash_on_hand', 'total_long_position', 'long_cost_basis', 'long_pnl', 'total_short_position', 'short_cost_basis', 'short_pnl', 'close']
 
 def chunk_by_month(day_candles):
@@ -53,10 +63,47 @@ def run_simulation(instances_by_minute, candles, starting_date, ending_date, out
     cash_on_hand = float(initial_cash_on_hand)
     long_pnl = float(initial_long_pnl)
     short_pnl = float(initial_short_pnl)
-
-    # Create progress bar for the entire date range
+    
+    # Initialize win/loss counters
+    total_wins = 0
+    total_losses = 0
+    
+    # If we're continuing a simulation, load the win/loss counts from the existing trade log
+    if os.path.exists(os.path.join(output_folder, 'trades_all.csv')):
+        with open(os.path.join(output_folder, 'trades_all.csv'), 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row['order_type'] in ['close long', 'close short'] and 'ind_PnL' in row and row['ind_PnL']:
+                    try:
+                        pnl = float(row['ind_PnL'])
+                        if pnl > 0:
+                            total_wins += 1
+                        elif pnl < 0:
+                            total_losses += 1
+                    except (ValueError, TypeError):
+                        continue
+    
+    # Create progress bars for the entire date range
     total_minutes = int((ending_date - starting_date).total_seconds() // 60)
-    pbar_minutes = tqdm(total=total_minutes, desc=f'Processing {starting_date.strftime("%Y-%m-%d")}', unit='minute')
+    
+    # First line: Main progress bar with tqdm's built-in rate (responsive)
+    pbar_main = tqdm(
+        total=total_minutes,
+        desc='',  # Empty desc as we'll handle the prefix manually
+        unit='min',
+        position=0,
+        leave=True,
+        bar_format='{elapsed!s:>8}<{remaining!s:>8}  {rate_fmt} | {desc} | {n_fmt}/{total_fmt} | {percentage:3.0f}% |{bar}|'
+    )
+    
+    # Second line: Status line with statistics
+    pbar_status = tqdm(
+        total=0,  # We're not using the progress bar functionality here
+        desc='',  # Empty desc as we'll handle the display manually
+        position=1,
+        leave=True,
+        bar_format='{desc}'
+    )
 
     # Split day_candles into monthly chunks
     day_candles = [c for c in candles if starting_date <= c['timestamp'] <= ending_date]
@@ -80,11 +127,30 @@ def run_simulation(instances_by_minute, candles, starting_date, ending_date, out
 
             # Check for trades to take
             total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand = sim_entries(
-                minute_data, relevant_instances, float(fee_rate), trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder)
+                minute_data, 
+                relevant_instances, 
+                float(fee_rate), 
+                trade_log, 
+                open_positions, 
+                total_long_position, 
+                total_short_position, 
+                long_cost_basis, 
+                short_cost_basis, 
+                cash_on_hand, 
+                output_folder, 
+                all_instances=instances_by_minute if tt_stf_any_inside_activation or tt_stf_within_x_candles or tt_stf_within_x_minutes else None)
 
-            # Check for trades to close 
-            total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, long_pnl, short_pnl = sim_exits(
-                minute_data, trade_log, open_positions, float(fee_rate), total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, long_pnl, short_pnl, output_folder)
+            # Process exits for existing positions
+            result = sim_exits(
+                minute_data, trade_log, open_positions, fee_rate, total_long_position, total_short_position, 
+                long_cost_basis, short_cost_basis, cash_on_hand, long_pnl, short_pnl, output_folder
+            )
+            total_long_position, total_short_position, long_cost_basis, short_cost_basis, \
+            cash_on_hand, long_pnl, short_pnl, exit_wins, exit_losses = result
+            
+            # Update win/loss counters
+            total_wins += exit_wins
+            total_losses += exit_losses
 
             # Update PnL values using the current minute's close price for analysis
             close_price = float(minute_data['close'])
@@ -114,34 +180,61 @@ def run_simulation(instances_by_minute, candles, starting_date, ending_date, out
                 write_log_entry(minute_log_entry, os.path.join(output_folder, 'analysis_all.csv'), analysis_columns)
             write_log_entry(minute_log_entry, os.path.join(output_folder, f'analysis_{minute_data["timestamp"].strftime("%Y%m")}.csv'), analysis_columns)
 
-            # Update progress bar by 1 minute each iteration
-            pbar_minutes.update(1)
-            
-            fmt_dict = pbar_minutes.format_dict
+            # Get progress bar formatting information
+            fmt_dict = pbar_main.format_dict
             n = fmt_dict['n']
             total = fmt_dict['total']
             elapsed = fmt_dict['elapsed']
-            rate_fmt = fmt_dict.get('rate_fmt') # Default rate (potentially smoothed)
-            remaining_seconds = fmt_dict.get('remaining') # Default ETA seconds
-            remaining_fmt = _format_seconds(remaining_seconds) # ETA formatted
-
+            rate_fmt = fmt_dict.get('rate_fmt', '0.00')  # Default rate (potentially smoothed)
+            remaining_seconds = fmt_dict.get('remaining', 0)  # Default ETA seconds
+            
+            # Format times with consistent 8-character width (HH:MM:SS)
+            elapsed_str = _format_seconds(elapsed).zfill(8)
+            remaining_str = _format_seconds(remaining_seconds).zfill(8)
+            
             if elapsed > 0 and n > 0:
-                avg_rate = n / elapsed # Overall average rate
-                eta_stable_seconds = (elapsed / n * (total - n)) # ETA based on average rate
-                # Construct the desired compact postfix string
-                postfix_str = (
-                    f"{rate_fmt} | " # Default rate
-                    f"Avg: {_format_seconds(elapsed)}<{_format_seconds(eta_stable_seconds)}, {avg_rate:.2f}min/s" # Avg elapsed<stable ETA, Avg rate
+                avg_rate = n / elapsed  # Overall average rate
+                eta_stable_seconds = (elapsed / n * (total - n))  # ETA based on average rate
+                
+                # Format stable ETA with consistent 8-character width
+                stable_remaining_str = _format_seconds(eta_stable_seconds).zfill(8)
+                
+                # Get open trades count and position values
+                open_trades = len(open_positions)
+                
+                # Update the main progress bar with date and progress
+                pbar_main.set_description_str(f"Processing {minute_data['timestamp'].strftime('%Y-%m-%d')}")
+                
+                # Use the running counters for wins/losses
+                win_rate = total_wins / (total_wins + total_losses) if (total_wins + total_losses) > 0 else 0
+                
+                # Update the status line with statistics
+                status_line = (
+                    f"{elapsed_str}<{stable_remaining_str} "  # Use stable ETA for consistency
+                    f"{avg_rate:>7.2f}m/s avg| "
+                    f"Bankroll: ${total_bankroll:,.2f} | "
+                    f"Trades: {total_wins} W / {total_losses} L ({win_rate:.0%}) | "
+                    f"Pos: {open_trades} (L: {total_long_position:,.0f} |S: {abs(total_short_position):,.0f})"
                 )
-                pbar_minutes.set_postfix_str(postfix_str, refresh=False) # Update postfix without forcing refresh
+                pbar_status.set_description_str(status_line)
             else:
-                 pbar_minutes.set_postfix_str("Calculating...", refresh=False)
+                status_line = (
+                    f"{elapsed_str}<{remaining_str} "
+                    f"{'0.00':>7}m/s avg| "
+                    f"Bankroll: ${total_bankroll:,.2f} | "
+                    f"Trades: 0 W / 0 L (0%) | "
+                    f"Pos: 0 (L: 0|S: 0)"
+                )
+                pbar_main.set_description_str(f"Processing {minute_data['timestamp'].strftime('%Y-%m-%d')}")
+                pbar_status.set_description_str(status_line)
+                
+            # Update the main progress bar
+            pbar_main.update(1)
 
-            # Update the progress bar description with the current date
-            pbar_minutes.set_description(f"Processing {minute_data['timestamp'].strftime('%Y-%m-%d')}")
-
-    # Close progress bar with a newline
-    pbar_minutes.close()
+    # Close progress bars
+    pbar_main.close()
+    pbar_status.close()
+    print()  # Extra newline after progress bars
     print()  # Print a new line after progress bar completion
 
     # Generate the summary report at the end

@@ -10,8 +10,30 @@ import time
 import subprocess
 from tqdm import tqdm
 
-# This script downloads historical data for any trading pair (eg. SOLUSDT) from Binance
-# and saves it as CSV files for different timeframes.
+# This script downloads historical data for any trading pair (e.g., SOLUSDT) from Binance and saves it as CSV files for different timeframes.
+# 
+# Usage:
+# python download_binance_historical_data.py [OPTIONS]
+# 
+# Main Modes:
+# --some: Downloads all standard timeframes directly from Binance,
+#         overwriting any existing candle data files. Useful for backtesting
+#         on a small set of timeframes.
+# --all: Downloads 1m data and launches the converter to create custom
+#         timeframes. Ideal for comprehensive data analysis.
+# --sample: Downloads 1-second data for a specified 1-minute period.
+#           Requires --start-date and --symbol to be explicitly specified.
+#           This mode is useful for high-resolution data analysis within a
+#           specific minute.
+# 
+# Command Line Arguments:
+# -s, --symbol: Trading pair symbol (default: SOLUSDT)
+# -d, --directory: Data directory (default: ../../Data/{symbol}-{exchange}/Candles)
+# --start-date: Start date (YYYY-MM-DD or YYYYMMDD)
+# --end-date: End date (YYYY-MM-DD or YYYYMMDD)
+# -v, --verbose: Print verbose output
+# -k, --keep-incomplete: Keep incomplete periods
+# -h, --help, -?, --?, /?: Show this help message and exit
 
 # Default settings - you can change these if desired (or specify them as command line argu)
 default_folder_path = os.path.join('..', '..', 'Data')
@@ -25,7 +47,6 @@ default_exchange = "binance"  # Default exchange (lowercase)
 # Standard timeframes supported by Binance
 # this list will be used with --some mode (see project README for more details) 
 STANDARD_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1mo']
-
 
 # Do not edit below this line unless you know what you're doing.
 # **************************************************************************
@@ -53,7 +74,7 @@ def get_exchange_timeframe(exchange_id, timeframe):
 
 def get_base_timeframe(timeframe):
     """Get the appropriate base timeframe to use for resampling"""
-    # Extract number and unit from timeframe string
+    # Extract the number and unit from timeframe string
     timeframe = timeframe.lower()  # Normalize case before comparisons
     match = re.match(r'(\d+)([a-zA-Z]+)', timeframe)
     if not match:
@@ -548,7 +569,9 @@ def timeframe_to_minutes(timeframe):
     unit = match.group(2).lower()
     
     # Convert to minutes
-    if unit == 'm':
+    if unit == 's':
+        return number / 60  # Convert seconds to fractional minutes
+    elif unit == 'm':
         return number
     elif unit == 'h':
         return number * 60
@@ -605,11 +628,11 @@ def download_historical_data(symbol, exchange_id, timeframe, start_time, end_tim
     
     # Convert timestamps to milliseconds
     if args.some:
-        end_timestamp = int(pd.Timestamp.now(tz='UTC').timestamp() * 1000)
+        end_timestamp_ms = int(pd.Timestamp.now(tz='UTC').timestamp() * 1000)
     else:
-        end_timestamp = int(pd.to_datetime(end_time).timestamp() * 1000)
-    since = int(pd.to_datetime(start_time).timestamp() * 1000)
-    current_timestamp = since
+        end_timestamp_ms = int(pd.to_datetime(end_time).timestamp() * 1000)
+    since_ms = int(pd.to_datetime(start_time).timestamp() * 1000)
+    current_timestamp = since_ms
     limit = 1000
     
     # Calculate timeframe duration in milliseconds
@@ -620,7 +643,7 @@ def download_historical_data(symbol, exchange_id, timeframe, start_time, end_tim
     retry_delay = 10  # seconds
     
     # Calculate total number of candles for progress bar
-    total_candles = (end_timestamp - since) // tf_ms
+    total_candles = (end_timestamp_ms - since_ms) // tf_ms
     if total_candles <= 0:
         if verbose:
             print("No new data to download")
@@ -629,12 +652,12 @@ def download_historical_data(symbol, exchange_id, timeframe, start_time, end_tim
     pbar = tqdm(desc=f'Downloading {symbol} {timeframe} candles', total=total_candles, unit='candles')
     all_candles = []
     
-    while current_timestamp < end_timestamp:
+    while current_timestamp < end_timestamp_ms:
         try:
             candles = exchange_instance.fetch_ohlcv(
                 timeframe=exchange_tf,
                 symbol=symbol,
-                since=current_timestamp,
+                since=int(current_timestamp),  # Ensure integer type for Binance API
                 limit=limit
             )
             
@@ -822,7 +845,7 @@ def download_sample_data(symbol, exchange_id, start_date, sample_time, data_dir=
             candles = exchange_instance.fetch_ohlcv(
                 timeframe=exchange_tf,
                 symbol=symbol,
-                since=current_timestamp,
+                since=current_timestamp,  # Original integer format
                 limit=100  # Get more than we need for the minute
             )
             
@@ -922,6 +945,8 @@ def main():
     verbose = args.verbose
     keep_incomplete = args.keep_incomplete if hasattr(args, 'keep_incomplete') else False
     
+    # Return code: 0 = success, 1 = no data but ran successfully, 2 = error
+    
     # Handle sample mode
     if args.sample:
         exchange_id = args.sample[0].lower()
@@ -934,7 +959,7 @@ def main():
                 raise ValueError()
         except ValueError:
             print(f"Error: Invalid time format '{sample_time}'. Please use HH:MM format (e.g., 14:30).")
-            sys.exit(1)
+            return 2  # Error code
         
         # Set output directory
         if args.directory:
@@ -970,9 +995,11 @@ def main():
             # Save the data
             df.to_csv(output_path, date_format='%Y-%m-%d %H:%M:%S')
             print(f"Sample data saved to {output_path}")
-        
-        print_execution_time(start_timestamp)
-        return
+            print_execution_time(start_timestamp)
+            return 0  # Success - data found and saved
+        else:
+            print_execution_time(start_timestamp)
+            return 1  # No data found but process ran successfully
     
     # Set folder path for non-sample modes
     if args.directory:
@@ -1022,7 +1049,7 @@ def main():
         
         print("Download complete.")
         print_execution_time(start_timestamp)
-        return
+        return 0  # Success - data found and saved
     
     # Handle 1m data first (for both --all and default modes)
     one_min_file = f"{args.symbol}_{default_exchange}_1m.csv"
@@ -1096,7 +1123,7 @@ def main():
                     if args.verbose:
                         print(f"Expected: {third_last_line}")
                         print(f"Got: {first_new_row}")
-                    return
+                    return 2  # Error code
                 if not keep_incomplete:
                     truncate_future_candles(one_min_path, end_time)
     
@@ -1129,7 +1156,7 @@ def main():
                 
         
         print_execution_time(start_timestamp)
-        return
+        return 0  # Success - data found and saved
     
     # Default mode: Update other existing timeframe files
     # Sort timeframes by base timeframe and then by size
@@ -1161,6 +1188,10 @@ def main():
     
     print("Download complete.")
     print_execution_time(start_timestamp)
+    return 0  # Success - data found and saved
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    # Run the main function and get its return code
+    exit_code = main()
+    # Exit with the appropriate code
+    sys.exit(exit_code if exit_code is not None else 0)
