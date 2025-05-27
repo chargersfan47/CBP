@@ -105,11 +105,7 @@ The scripts in the Processing folder are used for fetching historical candle dat
    - The processed files are saved to an output folder, and the original files can be optionally deleted.
    - This "single core" version of the file will do all processing in one thread, which may take a long time.
 
-#### Or
 
-#### Run `historical_process_status_of_instances_multicore.py`
-   - This script does the same processing as the single-core version above.
-   - This "multicore" version will split the work into chunks, one for each processor core you have, and process each chunk at the same time. This will be much faster but may strain your system.
 
 ## Analysis Folder
 
@@ -121,7 +117,7 @@ The Analysis folder contains scripts for analyzing processed instances.
 
 ## BotSim1.0
 
-The BotSim1.0 folder contains a program for simulating trading strategies based on processed instances.  It produces the following output:
+The BotSim1.0 folder contains a program for simulating trading strategies based on processed instances. The simulator offers numerous configuration options (available in `config.py`) to fine-tune your trading strategy. It produces the following output:
 - A minute-by-minute tracking of total bankroll, long / short position size, unrealized PnL, and cost basis.  This is split into monthly files named **analysis_yyyymm.csv**
 - A list of currently open positions in **open_positions.csv**.  As trades are closed, they are removed from this file and moved to...
 - A list of closed positions in **closed_positions.csv**.  This file contains instance performance, because each row represents an open trade and a close trade.
@@ -137,6 +133,38 @@ Brief description of the files:
 - **sim_exits.py** - Contains logic for executing exits during the sim.
 - **position_size.py** - Contains logic for determining the position size of an entry. 
 - **simulation.py** - Contains the main structure of the simulation processing loop.
+
+### Simulator Features
+
+The simulator offers a wide range of configurable options in `config.py`:
+
+#### Position Sizing
+- Three methods available: fixed quantity, fixed dollar amount, or percentage of bankroll
+- Customizable starting bankroll and fee rate
+
+#### Entry Conditions
+- Filter by trade situation (e.g., '1v1', '1v1+1')
+- Trigger Trade Logic - Only take trades when another instance with same timeframe/direction:
+  - Activates between confirmation and activation of the current trade
+  - Activates in the same minute
+  - Activates within X multiples of the timeframe (e.g., within 3 hours for a 1h trade)
+  - Activates within X minutes (regardless of timeframe)
+- Min/Max pending age filters
+- Fibonacci level entry options (0.5, 0.0, -0.5, -1.0)
+- Group filtering to avoid certain trade groups
+
+#### Exit Conditions
+- Time-based exits after a specified number of hours
+- Fibonacci level exit options (0.5, 0.0, -0.5, -1.0)
+- Position drawdown management:
+  - Standard max position drawdown (percentage of bankroll)
+  - Advanced max position drawdown with dynamic scaling based on:
+    - Pending time (older instances get more allowance)
+    - Trigger time (instances with closer triggers get more allowance)
+    - Customizable weights and thresholds
+
+#### Debug Options
+- Detailed AMPD output for troubleshooting
 
 To use it:
 
