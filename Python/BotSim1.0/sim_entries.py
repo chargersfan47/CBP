@@ -90,7 +90,7 @@ def timeframe_to_minutes(tf):
 
 
 def sim_entries(minute_data, relevant_instances, fee_rate, trade_log, open_positions, total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand, output_folder, all_instances=None):
-    # Check for regular trade entries first
+    # Check for regular trade entries
     # Filter active trades by situation
     active_trades = [
         trade for trade in relevant_instances
@@ -100,14 +100,34 @@ def sim_entries(minute_data, relevant_instances, fee_rate, trade_log, open_posit
     ]
 
     for trade in active_trades:
-        # Check if trade meets the minimum pending age requirement
+        # Check if trade meets the minimum/maximum pending age requirements
+        confirm_date = datetime.strptime(trade['confirm_date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['confirm_date'], str) else trade['confirm_date']
+        active_date = datetime.strptime(trade['Active Date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['Active Date'], str) else trade['Active Date']
+        
+        # Time-based pending age checks
         if USE_MIN_PENDING_AGE or USE_MAX_PENDING_AGE:
-            confirm_date = datetime.strptime(trade['confirm_date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['confirm_date'], str) else trade['confirm_date']
-            active_date = datetime.strptime(trade['Active Date'], '%Y-%m-%d %H:%M:%S') if isinstance(trade['Active Date'], str) else trade['Active Date']
             difference_minutes = (active_date - confirm_date).total_seconds() / 60
             if USE_MIN_PENDING_AGE and difference_minutes < MIN_PENDING_AGE:
                 continue
             if USE_MAX_PENDING_AGE and difference_minutes > MAX_PENDING_AGE:
+                continue
+                
+        # Candle-based pending age checks
+        if USE_MIN_PENDING_CANDLES or USE_MAX_PENDING_CANDLES:
+            # Get the timeframe in minutes
+            tf_minutes = timeframe_to_minutes(trade['Timeframe'])
+            if tf_minutes == 0:  # Invalid timeframe, skip candle-based checks
+                continue
+                
+            # Calculate number of candles between confirm and active dates
+            time_diff = active_date - confirm_date
+            total_minutes = time_diff.total_seconds() / 60
+            candle_count = total_minutes / tf_minutes
+            
+            # Apply min/max candle count checks
+            if USE_MIN_PENDING_CANDLES and candle_count < MIN_PENDING_CANDLES:
+                continue
+            if USE_MAX_PENDING_CANDLES and candle_count > MAX_PENDING_CANDLES:
                 continue
 
         # Check if trade meets the trigger trade requirements.  Checking the global flag is part of the sub-function.
@@ -532,6 +552,12 @@ def process_entry(trade, trade_name, entry_price, minute_data, trade_log, open_p
                  cash_on_hand, fee_rate, output_folder, trade_id=None, fib_level=None, trigger_trade=None):
     """Process a trade entry and calculate updated position values"""
     
+    # Check position limits based on leverage and position size
+    if position_size_method == 3 and MAX_LEVERAGE is not None and MAX_LEVERAGE > 0:
+        max_allowed_positions = int((MAX_LEVERAGE * 100) / position_size_percent)
+        if max_allowed_positions > 0 and len(open_positions) >= max_allowed_positions:
+            return total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand
+    
     # Calculate AMPD values (always calculate these, regardless of use_ampd_percent)
     ampd_p_value = 0.0
     ampd_t_value = 0.0
@@ -727,4 +753,3 @@ def process_entry(trade, trade_name, entry_price, minute_data, trade_log, open_p
     write_log_entry(open_position, os.path.join(output_folder, 'open_positions.csv'), open_position_columns)
     
     return total_long_position, total_short_position, long_cost_basis, short_cost_basis, cash_on_hand
-

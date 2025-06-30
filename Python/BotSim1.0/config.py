@@ -3,11 +3,25 @@ from operator import truediv
 import os
 
 # Variables
-starting_bankroll = 10000
+starting_bankroll = 10000.0
+
+# Early termination settings
+USE_LOW_BANKROLL_TERMINATION = True  # Whether to enable early termination on low bankroll
+LOW_BANKROLL_THRESHOLD = 0.6  # Terminate if bankroll drops below this fraction of starting bankroll
+
+# Low volume termination settings
+USE_LOW_VOLUME_TERMINATION = True  # Whether to enable early termination on low monthly trade volume
+LOW_VOLUME_THRESHOLD = 4  # Terminate if number of trades in a month is below this threshold
+
 position_size_method = 3   # 1 = fixed quantity, 2 = fixed dollar amount, 3 = percentage of bankroll
 position_size_qty = 0.2    # Used if position_size_method = 1
 position_size_amount = 50  # Used if position_size_method = 2
 position_size_percent = 70  # Used if position_size_method = 3 (1 = 1%; no need to divide by 100)
+MAX_LEVERAGE = 3.0  # Maximum allowed leverage - will prevent opening more than (MAX_LEVERAGE * 100 / position_size_percent) positions (only used when position_size_method = 3)
+
+# Position descalation settings (only works with position_size_method = 3)
+USE_POSITION_DESCALING = False  # If True, scales position size based on bankroll growth
+POSITION_DESCALING_FACTOR = 0.5  # Weighting factor (0-1) for position descalation. Higher values give more weight to starting bankroll.
 
 starting_date = datetime(2022, 1, 1)
 ending_date = datetime(2024, 6, 30)
@@ -43,9 +57,15 @@ FULL_INSTANCE_SET_FLAGS = [
 
 # Enter trades that are pending for a certain number of hours by turning on the following four variables:
 USE_MIN_PENDING_AGE = False
-MIN_PENDING_AGE = 72
+MIN_PENDING_AGE = 12
 USE_MAX_PENDING_AGE = False
-MAX_PENDING_AGE = 2500
+MAX_PENDING_AGE = 72
+
+# Enter trades that are pending for a certain number of candles by turning on the following four variables:
+USE_MIN_PENDING_CANDLES = True
+MIN_PENDING_CANDLES = 10
+USE_MAX_PENDING_CANDLES = True
+MAX_PENDING_CANDLES = 48
 
 # Enter trades at Fibonacci levels
 DD_on_fib0_5 = False  # Enter at fib 0.5 level
@@ -59,7 +79,7 @@ AVOID_GROUPS = False  # If True, only take trades where group_id is 'NA' (if gro
 #Exits:
 # Exit trades after a certain number of hours by turning on the following two variables:
 USE_STATIC_TIME_CAPIT = False
-STATIC_TIME_CAPIT_DURATION = 1.5  # Or any other suitable number of hours
+STATIC_TIME_CAPIT_DURATION = 60  # Or any other suitable number of hours
 
 # Exit trades at Fibonacci levels
 SL_on_fib0_5 = False  # Exit at fib 0.5 level
@@ -85,6 +105,7 @@ ampd_pending_time_high = 100 # days, default 100.  This means a pending instance
 ampd_trigger_time_high = 60 # minutes, default 60.  This means a trigger instance 57 minutes before activation time will get a (60-57)/60 allowance towards max drawdown.
 
 # Debug settings
+debug_show_mpd_output = False  # Set to True to show detailed MPD debug output
 debug_show_ampd_output = False  # Set to True to show detailed AMPD debug output
 
 # Update these paths to match your environment.  The defaults are just placeholders.

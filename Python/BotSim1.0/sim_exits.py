@@ -399,15 +399,16 @@ def check_max_position_drawdown(open_position, current_price, current_timestamp=
                         else:  # short
                             exit_price = entry_price * (1 + mpd_percent / 100.0)
                         
-                        from tqdm import tqdm
-                        tqdm.write("\n=== DEBUG: Same-Minute Max Drawdown Triggered ===")
-                        tqdm.write(f"Position ID: {open_position.get('trade_id', 'N/A')}")
-                        tqdm.write(f"Extreme Drawdown: {extreme_drawdown_pct:.4f}%")
-                        tqdm.write(f"Max Allowed: {mpd_percent:.4f}%")
-                        tqdm.write(f"Exit Price: {exit_price:.8f}")
-                        tqdm.write(f"Extreme Price: {extreme_price:.8f}")
-                        tqdm.write(f"Entry Price: {entry_price:.8f}")
-                        tqdm.write("")
+                        if debug_show_mpd_output:
+                            from tqdm import tqdm
+                            tqdm.write("\n=== DEBUG: Same-Minute Max Drawdown Triggered ===")
+                            tqdm.write(f"Position ID: {open_position.get('trade_id', 'N/A')}")
+                            tqdm.write(f"Extreme Drawdown: {extreme_drawdown_pct:.4f}%")
+                            tqdm.write(f"Max Allowed: {mpd_percent:.4f}%")
+                            tqdm.write(f"Exit Price: {exit_price:.8f}")
+                            tqdm.write(f"Extreme Price: {extreme_price:.8f}")
+                            tqdm.write(f"Entry Price: {entry_price:.8f}")
+                            tqdm.write("")
                         
                         return True, exit_price, f'same-minute max position drawdown ({mpd_percent}% of bankroll)'
                     
@@ -450,19 +451,20 @@ def check_max_position_drawdown(open_position, current_price, current_timestamp=
         else:  # short
             exit_price = entry_price + (max_allowed_loss / position_size)
         
-        from tqdm import tqdm
-        tqdm.write("\n=== DEBUG: Max Drawdown Triggered ===")
-        tqdm.write(f"Position ID: {open_position.get('trade_id', 'N/A')}")
-        tqdm.write(f"Current PnL: {current_pnl:.8f}")
-        tqdm.write(f"Current Drawdown: {current_drawdown_pct:.4f}%")
-        if instance_max_drawdown is not None:
-            tqdm.write(f"Instance Max Drawdown: {instance_max_drawdown:.4f}%")
-        tqdm.write(f"Max Allowed Loss: {-max_allowed_loss:.8f}")
-        tqdm.write(f"Exit Price: {exit_price:.8f}")
-        tqdm.write(f"Current Price: {current_price_value:.8f}")
-        tqdm.write(f"Entry Price: {entry_price:.8f}")
-        tqdm.write(f"Position Size: {position_size:.8f}")
-        tqdm.write("")
+        if debug_show_mpd_output:
+            from tqdm import tqdm
+            tqdm.write("\n=== DEBUG: Max Drawdown Triggered ===")
+            tqdm.write(f"Position ID: {open_position.get('trade_id', 'N/A')}")
+            tqdm.write(f"Current PnL: {current_pnl:.8f}")
+            tqdm.write(f"Current Drawdown: {current_drawdown_pct:.4f}%")
+            if instance_max_drawdown is not None:
+                tqdm.write(f"Instance Max Drawdown: {instance_max_drawdown:.4f}%")
+            tqdm.write(f"Max Allowed Loss: {-max_allowed_loss:.8f}")
+            tqdm.write(f"Exit Price: {exit_price:.8f}")
+            tqdm.write(f"Current Price: {current_price_value:.8f}")
+            tqdm.write(f"Entry Price: {entry_price:.8f}")
+            tqdm.write(f"Position Size: {position_size:.8f}")
+            tqdm.write("")
         
         return True, exit_price, f'max position drawdown ({mpd_percent}% of bankroll)'
     
