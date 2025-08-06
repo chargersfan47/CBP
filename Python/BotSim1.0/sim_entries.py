@@ -304,8 +304,9 @@ def check_for_trigger_trades(trade, relevant_instances, all_instances=None):
                         if isinstance(other_active, str):
                             other_active = datetime.strptime(other_active, '%Y-%m-%d %H:%M:%S')
                         
-                        # Get the other trade's completed date if it exists
-                        other_completed = other_trade.get('Completed Date')
+                        # Get the other trade's completed date if it exists - check both field name variations
+                        completed_date_field = 'Completed Date' if 'Completed Date' in other_trade else 'completed_date'
+                        other_completed = other_trade.get(completed_date_field)
                         if isinstance(other_completed, str) and other_completed.strip():
                             other_completed = datetime.strptime(other_completed, '%Y-%m-%d %H:%M:%S')
                         
@@ -353,8 +354,9 @@ def check_for_trigger_trades(trade, relevant_instances, all_instances=None):
                 if isinstance(other_active, str):
                     other_active = datetime.strptime(other_active, '%Y-%m-%d %H:%M:%S')
                 
-                # Get the other trade's completed date if it exists
-                other_completed = other_trade.get('Completed Date')
+                # Get the other trade's completed date if it exists - check both field name variations
+                completed_date_field = 'Completed Date' if 'Completed Date' in other_trade else 'completed_date'
+                other_completed = other_trade.get(completed_date_field)
                 if isinstance(other_completed, str) and other_completed.strip():
                     other_completed = datetime.strptime(other_completed, '%Y-%m-%d %H:%M:%S')
                 
@@ -656,7 +658,8 @@ def process_entry(trade, trade_name, entry_price, minute_data, trade_log, open_p
         'trade_id': trade_id,
         'confirm_date': datetime.strptime(trade[confirm_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[confirm_date_field], str) else trade[confirm_date_field],
         'active_date': datetime.strptime(trade[active_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[active_date_field], str) else trade[active_date_field],
-        'trade_date': trade_date,  # Use the appropriate date for the trade
+        'entry_date': trade_date,  # Use the appropriate date for the trade
+        'exit_date': None,  # Null for entry trades
         'completed_date': datetime.strptime(trade[completed_date_field], '%Y-%m-%d %H:%M:%S') if isinstance(trade[completed_date_field], str) else trade[completed_date_field],
         'order_type': order_type,
         'trade_fee': round(trade_fee, 4),
@@ -671,7 +674,20 @@ def process_entry(trade, trade_name, entry_price, minute_data, trade_log, open_p
         'timeframe': trade[timeframe_field],
         'Name': trade_name,
         'winner': None,
-        'loss_reason': None
+        'loss_reason': None,
+        'maxfib': trade.get('MaxFib') if 'MaxFib' in trade and trade['MaxFib'] not in [None, '', 'None'] else None,
+        'extreme_price': float(trade['extreme_price']) if 'extreme_price' in trade and trade['extreme_price'] not in [None, '', 'None'] else None,
+        'extreme_price_date': trade.get('extreme_price_date') if 'extreme_price_date' in trade and trade['extreme_price_date'] not in [None, '', 'None'] else None,
+        'max_position_drawdown': None,  # Will be calculated on exit
+        'close_trade_impact': None,  # Only relevant on exit
+        'instance_id': trade.get('instance_id', None),
+        'ampd_p_value': ampd_p_value,
+        'ampd_t_value': ampd_t_value,
+        'tt_instance_id': trigger_trade['trade'].get('instance_id') if trigger_trade and trigger_trade.get('trade') else None,
+        'tt_confirm_date': trigger_trade.get('confirm_date') if trigger_trade else None,
+        'tt_active_date': trigger_trade.get('active_date') if trigger_trade else None,
+        'tt_completed_date': trigger_trade.get('completed_date') if trigger_trade else None,
+        'tt_entry_price': float(trigger_trade['trade'].get('entry')) if trigger_trade and trigger_trade.get('trade') and trigger_trade['trade'].get('entry') is not None else None
     }
     trade_log.append(trade_entry_dict)
 
@@ -743,7 +759,7 @@ def process_entry(trade, trade_name, entry_price, minute_data, trade_log, open_p
     open_positions.append(open_position)
     
     # Write trade log entry to both trades_all.csv and trades_yyyymm.csv based on flag
-    trades_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'completed_date', 'order_type', 'trade_fee', 'price', 'units_traded', 'cost_basis_change', 'realized_PnL', 'total_long_position', 'total_short_position', 'balance', 'ind_PnL', 'timeframe', 'Name', 'winner', 'loss_reason']
+    trades_columns = ['trade_id', 'confirm_date', 'active_date', 'entry_date', 'exit_date', 'completed_date', 'order_type', 'trade_fee', 'price', 'units_traded', 'cost_basis_change', 'realized_PnL', 'total_long_position', 'total_short_position', 'balance', 'ind_PnL', 'timeframe', 'Name', 'winner', 'loss_reason', 'maxfib', 'extreme_price', 'extreme_price_date', 'max_position_drawdown', 'close_trade_impact', 'instance_id', 'ampd_p_value', 'ampd_t_value', 'tt_instance_id', 'tt_confirm_date', 'tt_active_date', 'tt_completed_date', 'tt_entry_price']
     write_log_entry(trade_entry_dict, os.path.join(output_folder, 'trades_all.csv'), trades_columns)
     if CREATE_TRADES_BY_MONTH:
         write_log_entry(trade_entry_dict, os.path.join(output_folder, f'trades_{minute_data["timestamp"].strftime("%Y%m")}.csv'), trades_columns)

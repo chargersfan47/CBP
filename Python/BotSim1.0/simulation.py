@@ -39,7 +39,7 @@ from reporting import generate_summary_report
 from initialization import load_state
 
 # Define columns for open_positions
-open_positions_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'Completed Date', 'Target Price', 
+open_positions_columns = ['trade_id', 'confirm_date', 'active_date', 'entry_date', 'Completed Date', 'Target Price', 
                          'Position Size', 'Direction', 'Open Price', 'Timeframe', 'Name',
                          'DateReached0.5', 'DateReached0.0', 'DateReached-0.5', 'DateReached-1.0',
                          'fib0.5', 'fib0.0', 'fib-0.5', 'fib-1.0', 'instance_id',
@@ -105,8 +105,9 @@ def check_monthly_trade_volume(month, output_folder, candles_chunk, total_bankro
             reader = csv.DictReader(f)
             open_dates = []
             for position in reader:
-                # Get the trade date from the position
-                open_date_str = position.get('trade_date', '').strip()
+                # Get the trade date from the position (may be named trade_date or entry_date)
+                open_date_str = position.get('entry_date', '') or position.get('trade_date', '')
+                open_date_str = open_date_str.strip() if isinstance(open_date_str, str) else ''
                 open_dates.append(open_date_str)
                 if not open_date_str:
                     continue
@@ -135,8 +136,9 @@ def check_monthly_trade_volume(month, output_folder, candles_chunk, total_bankro
             reader = csv.DictReader(f)
             closed_dates = []
             for position in reader:
-                # Get the trade date from the position
-                close_date_str = position.get('trade_date', '').strip()
+                # Get the trade date from the position (may be named trade_date or entry_date)
+                close_date_str = position.get('entry_date', '') or position.get('trade_date', '')
+                close_date_str = close_date_str.strip() if isinstance(close_date_str, str) else ''
                 closed_dates.append(close_date_str)
                 if not close_date_str:
                     continue

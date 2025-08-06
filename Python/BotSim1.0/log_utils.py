@@ -120,7 +120,7 @@ def analyze_monthly_data(analysis_file, trades_file, open_positions_file, month,
             with open(trades_file, 'r') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    trade_date = datetime.strptime(row['trade_date'], '%Y-%m-%d %H:%M:%S')
+                    trade_date = datetime.strptime(row['entry_date'], '%Y-%m-%d %H:%M:%S')
                     if trade_date.strftime('%Y%m') == month:
                         total_trades += 1
                         if row['order_type'] == 'open long':
@@ -182,7 +182,7 @@ def analyze_monthly_data(analysis_file, trades_file, open_positions_file, month,
             with open(trades_file, 'r') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    trade_date = datetime.strptime(row['trade_date'], '%Y-%m-%d %H:%M:%S')
+                    trade_date = datetime.strptime(row['entry_date'], '%Y-%m-%d %H:%M:%S')
                     trade_month = trade_date.strftime('%Y%m')
                     
                     # If this is an opening trade in this month or earlier

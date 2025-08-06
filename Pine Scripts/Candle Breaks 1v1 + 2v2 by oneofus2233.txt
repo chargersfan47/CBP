@@ -1,0 +1,216 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=6
+// By  chargersfan47 and oneofus2233; original script by syndotc, modified by Grok
+// Candle Breaks 1v1 L+S and 2v2 Bullish/Bearish v1.2 - 
+indicator("Engulf 1v1 + 2v2 v1.2", overlay=true)
+
+// Input section for 1v1 and 2v2 display toggles
+show_1v1 = input.bool(true, "Show 1v1 Patterns", group="1v1 Candle Engulfment")
+show_2v2 = input.bool(true, "Show 2v2 Bullish Pattern", group="2v2 Bullish Engulfment")
+show_2v2_bearish = input.bool(true, "Show 2v2 Bearish Pattern", group="2v2 Bearish Engulfment")
+
+// Minimum size of a break (in percentage) to identify. Breaks below this threshold appear in grey and do not produce alerts.
+percentageDiffThreshold = input.float(0.6, "Percentage Difference Threshold", minval=0.1, group="General Settings")
+
+// Convert timeframe
+timeframe = str.tostring(timeframe.period)
+
+if timeframe.isintraday and timeframe.multiplier >= 60
+    timeframe := str.tostring(timeframe.multiplier / 60) + 'H'
+else if timeframe.isintraday and timeframe.multiplier < 60  
+    timeframe := str.tostring(timeframe.multiplier) + "m"
+
+// Custom timeframes
+switch
+    timeframe == "1.2H" => timeframe := "72m"
+    timeframe == "1.3333333333H" => timeframe := "80m"
+    timeframe == "1.5H" => timeframe := "90m"
+    timeframe == "1.6H" => timeframe := "96m"
+    timeframe == "2.4H" => timeframe := "144m"
+    timeframe == "2.6666666667H" => timeframe := "160m"
+    timeframe == "4.8H" => timeframe := "288m"
+
+// Check previous candles for 1v1 pattern
+longIsBearish = close[1] < open[1]
+longIsBullish = close > open[1]
+shortIsBullish = close[1] > open[1]
+shortIsBearish = close < open[1]
+
+// Check candles for 2v2 Bullish pattern
+bearishCandle3 = close[3] < open[3]
+bearishCandle2 = close[2] < open[2]
+bullishCandle1 = close[1] > open[1]
+bullishCandle0 = close > open
+bullish2v2Condition = bearishCandle3 and bearishCandle2 and bullishCandle1 and bullishCandle0 and close[1] < open[3] and close > open[3]
+singleCandleEngulfInvalidBullish = close[1] > close[2] and close[1] > open[3]   // Invalid if a single bullish candle engulfs both bearish candles
+
+// Check candles for 2v2 Bearish pattern
+bullishCandle3 = close[3] > open[3]
+bullishCandle2 = close[2] > open[2]
+bearishCandle1 = close[1] < open[1]
+bearishCandle0 = close < open
+bearish2v2Condition = bullishCandle3 and bullishCandle2 and bearishCandle1 and bearishCandle0 and close[1] > open[3] and close < open[3]  // Fixed to use close < open[1]
+singleCandleEngulfInvalidBearish = close[1] < open[2] and close[1] < open[3]  // Invalid if a single bearish candle engulfs both bullish candles
+
+// Capture previous candle values for 1v1 pattern
+openPrev = open[1]
+highPrev = high[1]
+lowPrev = low[1]
+
+// Capture values for 2v2 patterns
+openCandle3 = open[3]
+lowCandle3 = low[3]
+lowCandle2 = low[2]
+highCandle3 = high[3]
+highCandle2 = high[2]
+
+// Determine significant digits for price
+sigDigits = 0
+if openPrev < 1
+    sigDigits := 4
+else if openPrev < 10
+    sigDigits := 3
+else if openPrev < 100
+    sigDigits := 2
+else
+    sigDigits := 2
+
+// Calculate target1618 using Fibonacci sequence with dynamic rounding for 1v1 pattern
+longTarget1618 = math.round(openPrev + (openPrev - lowPrev) * 0.618, sigDigits)
+shortTarget1618 = math.round(openPrev - (highPrev - openPrev) * 0.618, sigDigits)
+
+// Calculate target1618 for 2v2 Bullish pattern (Fib 0.618 from open[3] to lowest low of two bearish candles)
+lowestLow2v2Bullish = math.min(lowCandle3, lowCandle2)
+longTarget1618_2v2Bullish = math.round(openCandle3 + (openCandle3 - lowestLow2v2Bullish) * 0.618, sigDigits)
+
+// Calculate target1618 for 2v2 Bearish pattern (Fib 0.618 from open[3] to highest high of two bullish candles)
+highestHigh2v2Bearish = math.max(highCandle3, highCandle2)
+shortTarget1618_2v2Bearish = math.round(openCandle3 - (highestHigh2v2Bearish - openCandle3) * 0.618, sigDigits)
+
+// Define entryPrice for 1v1 and 2v2 patterns
+entryPrice1v1 = open[1]
+entryPrice2v2Bullish = open[3]
+entryPrice2v2Bearish = open[3]
+
+// Calculate percentage difference between entryPrice and target1618
+longPercentageDifference = ((longTarget1618 - entryPrice1v1) / entryPrice1v1) * 100
+shortPercentageDifference = ((entryPrice1v1 - shortTarget1618) / entryPrice1v1) * 100
+longPercentageDifference2v2Bullish = ((longTarget1618_2v2Bullish - entryPrice2v2Bullish) / entryPrice2v2Bullish) * 100
+shortPercentageDifference2v2Bearish = ((entryPrice2v2Bearish - shortTarget1618_2v2Bearish) / entryPrice2v2Bearish) * 100
+
+// Conditions for percentage difference being 0.6 or greater
+longPercentageDiffCondition = longPercentageDifference >= percentageDiffThreshold
+shortPercentageDiffCondition = shortPercentageDifference >= percentageDiffThreshold
+longPercentageDiffCondition2v2Bullish = longPercentageDifference2v2Bullish >= percentageDiffThreshold
+shortPercentageDiffCondition2v2Bearish = shortPercentageDifference2v2Bearish >= percentageDiffThreshold
+
+// Conditions for bullish and bearish breaks (1v1 pattern)
+bullishBreakAboveBearish = longIsBearish and longIsBullish and close > open[1]
+bearishBreakBelowBullish = shortIsBullish and shortIsBearish and close < open[1]
+
+// Check if current candle duration is equal to or shorter than the previous candle duration
+currentCandleDuration = time_close - time
+previousCandleDuration = time - time[1]
+isPeriodValid = currentCandleDuration <= previousCandleDuration  // Can be commented out for testing
+
+string direction = ""
+
+// Debug: Check data availability
+if bar_index < 3
+    label.new(bar_index, high, "Not Enough Data", style=label.style_label_down, color=color.gray, textcolor=color.black)
+
+// Debug: Check period validity
+if not isPeriodValid
+    label.new(bar_index, high, "Invalid Period", style=label.style_label_down, color=color.yellow, textcolor=color.black)
+
+// Plotting shapes for 1v1 pattern, controlled by show_1v1
+if show_1v1 and isPeriodValid and bullishBreakAboveBearish
+    direction := "Long"
+    if longPercentageDiffCondition
+        label.new(bar_index, high,
+             "🎯 " + str.tostring(math.round(longPercentageDifference, 2)) + "%" +
+             "\nX " + str.tostring(longTarget1618) +
+             "\nE " + str.tostring(entryPrice1v1), 
+             style=label.style_label_down,
+             color=color.green,
+             textcolor=color.white)
+    else
+        label.new(bar_index, high, str.tostring(math.round(longPercentageDifference, 2)) + "%", style=label.style_label_down, color=color.gray, textcolor=color.black)
+
+if show_1v1 and isPeriodValid and bearishBreakBelowBullish
+    direction := "Short"
+    if shortPercentageDiffCondition
+        label.new(bar_index, low,
+             "🎯 " + str.tostring(math.round(shortPercentageDifference, 2)) + "%" +
+             "\nE " + str.tostring(entryPrice1v1) +
+             "\nX " + str.tostring(shortTarget1618),
+             style=label.style_label_up,
+             color=color.red,
+             textcolor=color.white)
+    else
+        label.new(bar_index, low, str.tostring(math.round(shortPercentageDifference, 2)) + "%", style=label.style_label_up, color=color.gray, textcolor=color.black)
+
+// Plotting shapes for 2v2 Bullish pattern, controlled by show_2v2
+if show_2v2 and isPeriodValid and bullish2v2Condition and not singleCandleEngulfInvalidBullish
+    direction := "Long"
+    if longPercentageDiffCondition2v2Bullish
+        label.new(bar_index, high,
+             "2v2 Bullish\n🎯 " + str.tostring(math.round(longPercentageDifference2v2Bullish, 2)) + "%" +
+             "\nX " + str.tostring(longTarget1618_2v2Bullish) +
+             "\nE " + str.tostring(entryPrice2v2Bullish), 
+             style=label.style_label_down,
+             color=color.green,
+             textcolor=color.white)
+    else
+        label.new(bar_index, high, "2v2 Bullish\n" + str.tostring(math.round(longPercentageDifference2v2Bullish, 2)) + "%", style=label.style_label_down, color=color.gray, textcolor=color.black)
+
+// Plotting shapes for 2v2 Bearish pattern, controlled by show_2v2_bearish
+if show_2v2_bearish and isPeriodValid and bearish2v2Condition and not singleCandleEngulfInvalidBearish
+    direction := "Short"
+    if shortPercentageDiffCondition2v2Bearish
+        label.new(bar_index, low,
+             "2v2 Bearish\n🎯 " + str.tostring(math.round(shortPercentageDifference2v2Bearish, 2)) + "%" +
+             "\nX " + str.tostring(shortTarget1618_2v2Bearish) +
+             "\nE " + str.tostring(entryPrice2v2Bearish), 
+             style=label.style_label_up,
+             color=color.red,
+             textcolor=color.white)
+    else
+        label.new(bar_index, low, "2v2 Bearish\n" + str.tostring(math.round(shortPercentageDifference2v2Bearish, 2)) + "%", style=label.style_label_up, color=color.gray, textcolor=color.black)
+
+
+// Identify invalid breaks and label them, controlled by respective display inputs
+if show_1v1 and not isPeriodValid and bullishBreakAboveBearish
+    label.new(bar_index, high, "Time\nMismatch", style=label.style_label_down, color=color.gray, textcolor=color.black)
+
+if show_1v1 and not isPeriodValid and bearishBreakBelowBullish
+    label.new(bar_index, low, "Time\nMismatch", style=label.style_label_up, color=color.gray, textcolor=color.black)
+
+if show_2v2 and not isPeriodValid and bullish2v2Condition and not singleCandleEngulfInvalidBullish
+    label.new(bar_index, high, "2v2 Bullish\nTime Mismatch", style=label.style_label_down, color=color.gray, textcolor=color.black)
+
+if show_2v2_bearish and not isPeriodValid and bearish2v2Condition and not singleCandleEngulfInvalidBearish
+    label.new(bar_index, low, "2v2 Bearish\nTime Mismatch", style=label.style_label_up, color=color.gray, textcolor=color.black)
+
+// Alert conditions for 1v1 pattern
+alertcondition(bullishBreakAboveBearish and longPercentageDiffCondition, title="Bullish Break Above Threshold", message="Bullish Break Above Threshold Candle")
+alertcondition(bearishBreakBelowBullish and shortPercentageDiffCondition, title="Bearish Break Above Threshold", message="Bearish Break Above Threshold Candle")
+
+// Alert conditions for 2v2 patterns
+alertcondition(bullish2v2Condition and longPercentageDiffCondition2v2Bullish and not singleCandleEngulfInvalidBullish, title="2v2 Bullish Break Above Threshold", message="2v2 Bullish Break Above Threshold")
+alertcondition(bearish2v2Condition and shortPercentageDiffCondition2v2Bearish and not singleCandleEngulfInvalidBearish, title="2v2 Bearish Break Above Threshold", message="2v2 Bearish Break Above Threshold")
+
+// Sending notifications with JSON-formatted alert message for 1v1 pattern
+if isPeriodValid and bullishBreakAboveBearish and longPercentageDiffCondition
+    alert('{"symbol":"' + syminfo.ticker + '", "tf":"' + timeframe + '", "direction":"' + str.tostring(direction) + '", "price":"' + str.tostring(entryPrice1v1) + '", "tp":"' + str.tostring(longTarget1618) + '", "date":"' + str.format_time(timenow) + '", "situation":"' + "1v1" + '"}', alert.freq_once_per_bar_close)
+
+if isPeriodValid and bearishBreakBelowBullish and shortPercentageDiffCondition
+    alert('{"symbol":"' + syminfo.ticker + '", "tf":"' + timeframe + '", "direction":"' + str.tostring(direction) + '", "price":"' + str.tostring(entryPrice1v1) + '", "tp":"' + str.tostring(shortTarget1618) + '", "date":"' + str.format_time(timenow) + '", "situation":"' + "1v1" + '"}', alert.freq_once_per_bar_close)
+
+// Sending notifications for 2v2 Bullish pattern
+if isPeriodValid and bullish2v2Condition and longPercentageDiffCondition2v2Bullish and not singleCandleEngulfInvalidBullish
+    alert('{"symbol":"' + syminfo.ticker + '", "tf":"' + timeframe + '", "direction":"' + str.tostring(direction) + '", "price":"' + str.tostring(entryPrice2v2Bullish) + '", "tp":"' + str.tostring(longTarget1618_2v2Bullish) + '", "date":"' + str.format_time(timenow) + '", "situation":"' + "2v2 Bullish" + '"}', alert.freq_once_per_bar_close)
+
+// Sending notifications for 2v2 Bearish pattern
+if isPeriodValid and bearish2v2Condition and shortPercentageDiffCondition2v2Bearish and not singleCandleEngulfInvalidBearish
+    alert('{"symbol":"' + syminfo.ticker + '", "tf":"' + timeframe + '", "direction":"' + str.tostring(direction) + '", "price":"' + str.tostring(entryPrice2v2Bearish) + '", "tp":"' + str.tostring(shortTarget1618_2v2Bearish) + '", "date":"' + str.format_time(timenow) + '", "situation":"' + "2v2 Bearish" + '"}', alert.freq_once_per_bar_close)

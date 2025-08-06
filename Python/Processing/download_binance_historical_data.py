@@ -72,28 +72,81 @@ def get_exchange_timeframe(exchange_id, timeframe):
     """Map of exchange-specific timeframe formats"""
     return timeframe_map.get(exchange_id, {}).get(timeframe, timeframe)
 
-def get_base_timeframe(timeframe):
-    """Get the appropriate base timeframe to use for resampling"""
-    # Extract the number and unit from timeframe string
-    timeframe = timeframe.lower()  # Normalize case before comparisons
+def get_timeframe_components(timeframe):
+    """Extract components from a timeframe string"""
+    timeframe = timeframe.lower()
     match = re.match(r'(\d+)([a-zA-Z]+)', timeframe)
     if not match:
         raise ValueError(f"Invalid timeframe format: {timeframe}")
+    return int(match.group(1)), match.group(2)
+
+def get_available_bases(timeframes):
+    """Get all available base timeframes from the list of timeframes"""
+    # Sort timeframes by duration in minutes
+    return sorted(timeframes, key=timeframe_to_minutes)
+
+def find_best_base(timeframe, available_bases):
+    """Find the best base timeframe for the given target timeframe"""
+    if not available_bases:
+        return None
         
-    number = int(match.group(1))
-    unit = match.group(2)
+    target_mins = timeframe_to_minutes(timeframe)
+    best_base = None
+    best_factor = 0
     
-    # If unit is "m" OR timeframe is "1h", use "1m"
+    for base in available_bases:
+        if base == timeframe:  # Don't use self as base
+            continue
+            
+        base_mins = timeframe_to_minutes(base)
+        if base_mins == 0 or target_mins % base_mins != 0:
+            continue  # Not a factor
+            
+        factor = target_mins // base_mins
+        if factor > best_factor:
+            best_factor = factor
+            best_base = base
+    
+    return best_base
+
+def get_base_timeframe(timeframe, available_timeframes=None):
+    """Get the appropriate base timeframe to use for resampling
+    
+    Args:
+        timeframe: The target timeframe (e.g., '15m', '4h')
+        available_timeframes: List of all available timeframes to choose from
+        
+    Returns:
+        str: The best base timeframe to use, or None if none found
+    """
+    if available_timeframes is None:
+        # Default to standard bases if no timeframes provided
+        return _get_default_base_timeframe(timeframe)
+        
+    # Make sure we have the base timeframes in the available list
+    required_bases = {'1m', '1h', '1d'}
+    available_bases = set(available_timeframes).union(required_bases)
+    
+    # Try to find the best base from available timeframes
+    best_base = find_best_base(timeframe, available_bases)
+    if best_base:
+        return best_base
+        
+    # Fall back to default behavior if no suitable base found
+    return _get_default_base_timeframe(timeframe)
+
+def _get_default_base_timeframe(timeframe):
+    """Get default base timeframe (original behavior)"""
+    timeframe = timeframe.lower()
+    number, unit = get_timeframe_components(timeframe)
+    
     if unit == 'm' or timeframe == '1h':
         return "1m"
-    # If (unit is "h" AND not "1h") OR timeframe is "1d", use "1h"
     elif (unit == 'h' and timeframe != '1h') or timeframe == '1d':
         return "1h"
-    # If (unit is "d", "w", or "mo") AND not "1d", use "1d"
-    elif (unit in ['d', 'w', 'mo'] and timeframe != '1d'):
+    elif unit in ['d', 'w', 'mo'] and timeframe != '1d':
         return "1d"
-    else:
-        raise ValueError(f"Unsupported timeframe format: {timeframe}")
+    raise ValueError(f"Unsupported timeframe format: {timeframe}")
 
 def get_third_last_line(file_path):
     """Get the third last line from a file, excluding empty lines"""
@@ -143,6 +196,141 @@ def read_last_n_lines(file_path, n):
     except Exception as e:
         print(f"Error reading file {file_path}: {str(e)}")
         return []
+
+def read_candles_from_timestamp(file_path, start_timestamp, lookback_buffer=10):
+    """Read candle data backwards from end of file until we reach start_timestamp minus lookback buffer.
+    
+    Args:
+        file_path: Path to the candle CSV file
+        start_timestamp: Timestamp to start reading from (we'll read back further for buffer)
+        lookback_buffer: Number of extra candles to read before start_timestamp
+        
+    Returns:
+        pandas DataFrame with candle data from start_timestamp onwards (plus lookback buffer)
+    """
+    try:
+        # First, let's peek at the file to get the header
+        with open(file_path, 'r', encoding='utf-8') as f:
+            header_line = f.readline().strip()
+            if not header_line:
+                if verbose:
+                    print(f"Empty file: {file_path}")
+                return pd.DataFrame()
+        
+        # Parse the start timestamp if it's a string
+        if isinstance(start_timestamp, str):
+            start_timestamp = pd.to_datetime(start_timestamp)
+        elif isinstance(start_timestamp, pd.Timestamp):
+            pass  # Already a timestamp
+        else:
+            start_timestamp = pd.to_datetime(start_timestamp)
+        
+        if verbose:
+            print(f"Reading candles from {file_path} starting from {start_timestamp}...")
+        
+        # Read backwards from end of file to find our starting point
+        lines_to_read = []
+        found_start = False
+        
+        with open(file_path, 'rb') as f:
+            # Move to end of file
+            f.seek(0, 2)
+            file_size = f.tell()
+            
+            if file_size == 0:
+                if verbose:
+                    print(f"Empty file: {file_path}")
+                return pd.DataFrame()
+            
+            # Initialize variables
+            lines = []
+            chars_back = 0
+            candles_found = 0
+            
+            # Read backwards line by line
+            while chars_back < file_size:
+                # Move back one character at a time to find newlines
+                chars_back += 1
+                f.seek(-chars_back, 2)
+                
+                # Read one character
+                char = f.read(1)
+                
+                # If we hit a newline, we found a complete line
+                if char == b'\n':
+                    # Read the line
+                    current_pos = f.tell()
+                    line = f.readline().decode('utf-8').strip()
+                    
+                    if line and line != header_line:  # Skip empty lines and header
+                        lines.append(line)
+                        candles_found += 1
+                        
+                        # Try to parse the timestamp from this line
+                        try:
+                            # Assume timestamp is the first column
+                            timestamp_str = line.split(',')[0]
+                            line_timestamp = pd.to_datetime(timestamp_str)
+                            
+                            # Check if we've gone back far enough
+                            if line_timestamp < start_timestamp:
+                                # We've found enough data, but let's get a few more for the buffer
+                                if candles_found >= lookback_buffer:
+                                    found_start = True
+                                    break
+                        except (ValueError, IndexError):
+                            # Skip lines that don't parse correctly
+                            continue
+                    
+                    # Reset file position for next iteration
+                    f.seek(current_pos - 1)
+            
+            # If we didn't find enough data, read from the beginning
+            if not found_start and chars_back >= file_size:
+                # We've read the entire file, add the first line if we haven't
+                f.seek(0)
+                first_line = f.readline().decode('utf-8').strip()
+                if first_line and first_line != header_line and first_line not in lines:
+                    lines.append(first_line)
+        
+        if not lines:
+            if verbose:
+                print(f"No candle data found in {file_path}")
+            return pd.DataFrame()
+        
+        # Reverse the lines to get chronological order and add header
+        lines.reverse()
+        csv_content = header_line + '\n' + '\n'.join(lines)
+        
+        # Create DataFrame from the CSV content
+        from io import StringIO
+        df = pd.read_csv(StringIO(csv_content), dtype={'open': float, 'high': float, 'low': float, 'close': float, 'volume': float})
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+        if verbose:
+            print(f"Loaded {len(df)} candles from {df['timestamp'].iloc[0] if not df.empty else 'N/A'} to {df['timestamp'].iloc[-1] if not df.empty else 'N/A'}")
+        
+        return df
+        
+    except Exception as e:
+        if verbose:
+            print(f"Error reading candle data from {file_path}: {str(e)}")
+            print("Falling back to reading entire file...")
+        # Fallback to reading entire file if reverse reading fails
+        try:
+            df = pd.read_csv(file_path, dtype={'open': float, 'high': float, 'low': float, 'close': float, 'volume': float})
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # Filter to only data from start_timestamp onwards (with lookback buffer)
+            if not df.empty and start_timestamp is not None:
+                # Calculate buffer timestamp - use a conservative 1-minute buffer
+                buffer_time = start_timestamp - pd.Timedelta(minutes=lookback_buffer)
+                df = df[df['timestamp'] >= buffer_time]
+            
+            return df
+        except Exception as fallback_error:
+            print(f"Fallback reading also failed: {str(fallback_error)}")
+            return pd.DataFrame()
 
 def timeframe_to_offset(timeframe):
     """Convert timeframe to pandas offset string"""
@@ -501,8 +689,6 @@ def update_timeframe_from_base(symbol, exchange_id, timeframe, folder_path):
     # Get target file path
     target_file = os.path.join(folder_path, get_candle_filename(symbol, exchange_id, timeframe))
     
-    print(f"Updating {timeframe} TF using {base_tf} as a base... ", end="")
-    
     # Get the third last line to find where to start
     if os.path.exists(target_file):
         last_line = get_third_last_line(target_file)
@@ -511,8 +697,6 @@ def update_timeframe_from_base(symbol, exchange_id, timeframe, folder_path):
                 last_ts = pd.to_datetime(last_line.split(',')[0])
                 if verbose:
                     print(f"Meshing at timestamp {last_ts}")
-                else:
-                    print()
             except:
                 last_ts = pd.Timestamp('2020-01-01 00:00:00')
         else:
@@ -520,10 +704,13 @@ def update_timeframe_from_base(symbol, exchange_id, timeframe, folder_path):
     else:
         last_ts = pd.Timestamp('2020-01-01 00:00:00')
     
-    # Read base timeframe data
-    df = pd.read_csv(base_file, dtype={'open': float, 'high': float, 'low': float, 'close': float, 'volume': float})
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df = df[df['timestamp'] >= last_ts]
+    # Read base timeframe data using optimized reverse reading
+    # Only load data from last_ts onwards instead of entire file
+    df = read_candles_from_timestamp(base_file, last_ts, lookback_buffer=20)
+    
+    # Filter to ensure we only have data from last_ts onwards
+    if not df.empty:
+        df = df[df['timestamp'] >= last_ts]
     
     if df.empty:
         if verbose:
@@ -583,6 +770,58 @@ def timeframe_to_minutes(timeframe):
         return number * 30 * 24 * 60  # Approximate month as 30 days
     else:
         raise ValueError(f"Unknown timeframe unit: {unit}")
+
+def needs_update(file_path, timeframe, current_time):
+    """Check if a timeframe file needs updating based on the last candle and current time
+    
+    Args:
+        file_path (str): Path to the timeframe file
+        timeframe (str): Timeframe string (e.g., '1m', '5m', '1h')
+        current_time (datetime): Current time in UTC
+        
+    Returns:
+        bool: True if the file needs updating, False otherwise
+    """
+    if not os.path.exists(file_path):
+        if verbose:
+            print(f"File {file_path} doesn't exist, needs to be created")
+        return True  # File doesn't exist, so it needs to be created
+        
+    # Get last line from file
+    last_line = read_last_n_lines(file_path, 1)
+    if not last_line:
+        if verbose:
+            print(f"File {file_path} is empty, needs update")
+        return True  # Empty file, needs update
+        
+    try:
+        # Parse timestamp from last line
+        last_ts = pd.to_datetime(last_line[0].split(',')[0])
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.tz_localize('UTC')
+        
+        # Calculate timeframe duration in minutes
+        timeframe_mins = timeframe_to_minutes(timeframe)
+        
+        # Calculate when the next COMPLETED candle would be available
+        # A candle is only complete after its period has ended
+        next_complete_candle_time = last_ts + timedelta(minutes=timeframe_mins * 2)
+        
+        # If current time is past when the next complete candle would be available, we need to update
+        needs_update = current_time >= next_complete_candle_time
+        
+        if verbose:
+            if needs_update:
+                print(f"Timeframe {timeframe} needs update: last candle at {last_ts}, next complete candle at {next_complete_candle_time}, current time {current_time}")
+            else:
+                print(f"Timeframe {timeframe} doesn't need update: last candle at {last_ts}, next complete candle at {next_complete_candle_time}, current time {current_time}")
+            
+        return needs_update
+        
+    except Exception as e:
+        if verbose:
+            print(f"Error checking if {timeframe} needs update: {str(e)}")
+        return True  # If there's an error, assume we need to update
 
 def get_existing_timeframes(folder_path):
     """Get dictionary of existing timeframe files in the folder"""
@@ -906,26 +1145,54 @@ def download_sample_data(symbol, exchange_id, start_date, sample_time, data_dir=
     
     return df
 
-def timeframe_sort_key(tf):
+def timeframe_sort_key(tf, available_timeframes=None):
     """Sort key function for timeframes that ensures:
-    1. Timeframes are grouped by their base timeframe (1m, 1h, 1d)
+    1. Timeframes are grouped by their base timeframe
     2. Within each group, base timeframes come last
     3. Otherwise sorted by duration in minutes
     4. Special case: 1h comes last in the 1m group"""
-    base = get_base_timeframe(tf)
-    # Map base timeframes to priority (1m: 2, 1h: 1, 1d: 0)
-    base_priority = {'1m': 2, '1h': 1, '1d': 0}[base]
-    is_base = tf in ['1m', '1h', '1d']
+    # Get base timeframe, considering available timeframes if provided
+    base = get_base_timeframe(tf, available_timeframes) if available_timeframes else get_base_timeframe(tf)
+    
+    # Get base priorities (shorter timeframes have higher priority)
+    base_priorities = {
+        '1m': 300,  # Highest priority for minute-based
+        '2m': 290,
+        '3m': 280,
+        '5m': 270,
+        '10m': 260,
+        '15m': 250,
+        '30m': 240,
+        '1h': 200,   # Hourly group
+        '2h': 190,
+        '3h': 180,
+        '4h': 170,
+        '6h': 160,
+        '12h': 150,
+        '1d': 100,   # Daily group
+        '3d': 90,
+        '1w': 80,
+        '1mo': 70
+    }
+    
+    # Default priority for unknown timeframes (sort by minutes)
+    base_priority = base_priorities.get(base, 0)
+    
+    # Special handling for base timeframes (they should come last in their group)
+    is_base = tf == base
+    
+    # Get duration in minutes for secondary sorting
     minutes = timeframe_to_minutes(tf)
+    
     # Special handling for 1h - process it last among 1m-based timeframes
     if tf == '1h':
-        minutes = float('inf')  # This ensures 1h comes after all other minute-based timeframes
-    # Return tuple for sorting: (base_priority, is_base, minutes)
-    # This ensures:
-    # 1. Sort by base priority (1m group first, then 1h group, then 1d group)
-    # 2. Within each group, non-base timeframes come before base timeframes
-    # 3. Within each subgroup, sort by duration in minutes
-    return (base_priority, is_base, minutes)  # Higher priority for 1m base
+        minutes = float('inf')
+    
+    # Return tuple for sorting:
+    # 1. Base priority (grouping by base timeframe)
+    # 2. Whether it's a base timeframe (bases come last in their group)
+    # 3. Duration in minutes (for sorting within groups)
+    return (-base_priority, is_base, minutes)
 
 def print_execution_time(start_timestamp):
     """Print the total execution time in minutes and seconds"""
@@ -1158,33 +1425,95 @@ def main():
         print_execution_time(start_timestamp)
         return 0  # Success - data found and saved
     
-    # Default mode: Update other existing timeframe files
-    # Sort timeframes by base timeframe and then by size
-    sorted_timeframes = sorted(
-        STANDARD_TIMEFRAMES if args.some else [tf for tf in existing_timeframes.keys() if tf != '1m'],
-        key=timeframe_sort_key
-    ) if (args.some or existing_timeframes) else []
+    # Get list of all available timeframes (including 1m)
+    all_timeframes = set(existing_timeframes.keys())
+    if args.some:
+        all_timeframes.update(STANDARD_TIMEFRAMES)
+    all_timeframes.discard('1m')  # We handle 1m separately
+    
+    # Sort timeframes by their optimal processing order
+    sorted_timeframes = sorted(all_timeframes, key=lambda x: timeframe_sort_key(x, all_timeframes))
+    
+    # We'll process timeframes in order from smallest to largest
+    # and keep track of available bases as we go
+    processed_timeframes = set()
+    timeframe_bases = {}
+    
+    # Sort timeframes by duration in minutes
+    sorted_by_mins = sorted(all_timeframes, key=timeframe_to_minutes)
+    
+    # First pass: assign default bases
+    for tf in sorted_by_mins:
+        tf_mins = timeframe_to_minutes(tf)
+        
+        # Get all possible bases (already processed timeframes that are factors)
+        possible_bases = [b for b in processed_timeframes 
+                         if tf_mins % timeframe_to_minutes(b) == 0]
+        
+        # Find the largest suitable base
+        best_base = None
+        best_base_mins = 0
+        for base in possible_bases:
+            base_mins = timeframe_to_minutes(base)
+            if base_mins > best_base_mins:
+                best_base = base
+                best_base_mins = base_mins
+        
+        # If no suitable base found, use the default
+        if best_base is None:
+            best_base = _get_default_base_timeframe(tf)
+        
+        timeframe_bases[tf] = best_base
+        processed_timeframes.add(tf)
     
     # Group timeframes by their base
-    timeframes_by_base = {'1m': [], '1h': [], '1d': []}
-    for tf in sorted_timeframes:
-        base = get_base_timeframe(tf)
-        if base in timeframes_by_base:  # Only add if it's a base we handle
-            timeframes_by_base[base].append(tf)
+    timeframes_by_base = {}
+    for tf, base in timeframe_bases.items():
+        if base not in timeframes_by_base:
+            timeframes_by_base[base] = []
+        timeframes_by_base[base].append(tf)
     
-    # Process timeframes in the correct order
-    for base in ['1m', '1h', '1d']:
-        for timeframe in sorted(timeframes_by_base[base], key=timeframe_sort_key):
-            if timeframe != '1m':  # Skip 1m since we handle it separately
-                update_timeframe_from_base(args.symbol, default_exchange, timeframe, folder_path)
-                if not keep_incomplete:
-                    truncate_future_candles(os.path.join(folder_path, get_candle_filename(args.symbol, default_exchange, timeframe)), end_time)
+    # Process timeframes in order of increasing duration
+    # This ensures that when we process a timeframe, all its potential bases are already processed
+    for tf in sorted_by_mins:
+        base = timeframe_bases[tf]
+        
+        # Check if this timeframe needs updating
+        tf_file_path = os.path.join(folder_path, get_candle_filename(args.symbol, default_exchange, tf))
+        
+        # If we're keeping incomplete candles, always update
+        # Otherwise, check if this timeframe needs updating
+        should_update = True
+        if not keep_incomplete:
+            should_update = needs_update(tf_file_path, tf, end_time)
+            
+        if should_update:
+            print(f"Updating {tf} TF using {base} as a base...")
+            update_timeframe_from_base(args.symbol, default_exchange, tf, folder_path)
+            if not keep_incomplete:
+                truncate_future_candles(tf_file_path, end_time)
+        else:
+            print(f"Skipping {tf} update - no new candle needed since last run")
     
     # Truncate future candles in all generated timeframe files
     if not args.keep_incomplete:
-        for timeframe in sorted_timeframes:
-            if os.path.exists(os.path.join(folder_path, get_candle_filename(args.symbol, default_exchange, timeframe))):
-                truncate_future_candles(os.path.join(folder_path, get_candle_filename(args.symbol, default_exchange, timeframe)), end_time)
+        # Get all timeframe files including any newly created ones
+        all_tf_files = []
+        for file in os.listdir(folder_path):
+            if file.endswith('.csv'):
+                # Extract timeframe from filename
+                parts = file.split('_')
+                if len(parts) >= 3:
+                    tf = parts[-1].replace('.csv', '')
+                    all_tf_files.append((tf, os.path.join(folder_path, file)))
+        
+        # Sort by timeframe length
+        all_tf_files.sort(key=lambda x: timeframe_to_minutes(x[0]))
+        
+        # Truncate each file
+        for tf, file_path in all_tf_files:
+            if tf != '1m':  # 1m is already handled
+                truncate_future_candles(file_path, end_time)
     
     print("Download complete.")
     print_execution_time(start_timestamp)

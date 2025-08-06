@@ -79,7 +79,8 @@ def close_trade(open_position, close_price, trade_log, open_positions, total_lon
         'trade_id': open_position['trade_id'],
         'confirm_date': datetime.strptime(open_position['confirm_date'], '%Y-%m-%d %H:%M:%S') if isinstance(open_position['confirm_date'], str) else open_position['confirm_date'],
         'active_date': datetime.strptime(open_position['active_date'], '%Y-%m-%d %H:%M:%S') if isinstance(open_position['active_date'], str) and open_position['active_date'] else '',
-        'trade_date': minute_data['timestamp'],  # Current minute being processed
+        'entry_date': open_position.get('entry_date', minute_data['timestamp']),  # Use stored entry_date
+        'exit_date': minute_data['timestamp'],  # Current timestamp as the exit date
         'completed_date': open_position['Completed Date'],
         'order_type': order_type,
         'trade_fee': round(opening_fee + closing_fee, 4),  # Include both opening and closing fees
@@ -98,8 +99,10 @@ def close_trade(open_position, close_price, trade_log, open_positions, total_lon
         'maxfib': open_position.get('maxfib'),  # MaxFib from instance data
         'extreme_price': open_position.get('extreme_price'),  # Extreme price from instance data
         'extreme_price_date': open_position.get('extreme_price_date'),  # Extreme price date from instance data
-        'max_position_drawdown': open_position.get('max_position_drawdown'),  # Max position drawdown
-        'close_trade_impact': round(close_trade_impact, 4) if close_trade_impact > 0 else None,  # Calculated financial impact of trade on close
+        'max_position_drawdown': round(float(open_position.get('max_position_drawdown', 0)), 4) if open_position.get('max_position_drawdown') is not None else None,  # Max position drawdown with rounding
+        'instance_id': open_position.get('instance_id'),  # Include instance_id for exit trades
+        'ampd_p_value': open_position.get('ampd_p_value'),  # Include ampd_p_value for exit trades
+        'ampd_t_value': open_position.get('ampd_t_value'),  # Include ampd_t_value for exit trades
         'tt_instance_id': open_position.get('tt_instance_id'),
         'tt_confirm_date': open_position.get('tt_confirm_date'),
         'tt_active_date': open_position.get('tt_active_date'),
@@ -110,8 +113,8 @@ def close_trade(open_position, close_price, trade_log, open_positions, total_lon
     trade_log.append(trade_entry_dict)
 
     # Write trade log entry to both trades_all.csv and trades_yyyymm.csv based on flag
-    trades_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'completed_date', 'order_type', 'trade_fee', 'price', 'units_traded', 'cost_basis_change', 'realized_PnL', 'total_long_position', 'total_short_position', 'balance', 'ind_PnL', 'timeframe', 'Name', 'winner', 'loss_reason', 'maxfib', 'extreme_price', 'extreme_price_date', 'max_position_drawdown', 'close_trade_impact',
-                     'tt_instance_id', 'tt_confirm_date', 'tt_active_date', 'tt_completed_date', 'tt_entry_price']
+    trades_columns = ['trade_id', 'confirm_date', 'active_date', 'entry_date', 'exit_date', 'completed_date', 'order_type', 'trade_fee', 'price', 'units_traded', 'cost_basis_change', 'realized_PnL', 'total_long_position', 'total_short_position', 'balance', 'ind_PnL', 'timeframe', 'Name', 'winner', 'loss_reason', 'maxfib', 'extreme_price', 'extreme_price_date', 'max_position_drawdown',
+                     'instance_id', 'ampd_p_value', 'ampd_t_value', 'tt_instance_id', 'tt_confirm_date', 'tt_active_date', 'tt_completed_date', 'tt_entry_price']
     write_log_entry(trade_entry_dict, os.path.join(output_folder, 'trades_all.csv'), trades_columns)
     if CREATE_TRADES_BY_MONTH:
         write_log_entry(trade_entry_dict, os.path.join(output_folder, f'trades_{minute_data["timestamp"].strftime("%Y%m")}.csv'), trades_columns)
@@ -124,7 +127,7 @@ def close_trade(open_position, close_price, trade_log, open_positions, total_lon
     # Create closed position entry from open position
     closed_position_entry = {}
     # Add the base fields (those that were in original open_positions)
-    base_fields = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'Completed Date', 'Target Price', 
+    base_fields = ['trade_id', 'confirm_date', 'active_date', 'Completed Date', 'Target Price', 
                    'Position Size', 'Direction', 'Open Price', 'Timeframe', 'Name',
                    'extreme_price', 'maxfib', 'extreme_price_date', 'max_position_drawdown', 'ampd_p_value', 'ampd_t_value',
                    'instance_id',
@@ -139,6 +142,8 @@ def close_trade(open_position, close_price, trade_log, open_positions, total_lon
     
     # Add the additional fields for closed positions
     closed_position_entry.update({
+        'entry_date': open_position.get('trade_date', minute_data['timestamp']),  # Rename trade_date to entry_date
+        'exit_date': minute_data['timestamp'],  # Add exit_date as current timestamp
         'ind_PnL': round(ind_PnL, 4),
         'winner': 1 if ind_PnL > 0 else 0,
         'loss_reason': loss_reason
@@ -147,7 +152,7 @@ def close_trade(open_position, close_price, trade_log, open_positions, total_lon
     })
     
     # Define columns for closed positions (original open position columns + indicators of trade result)
-    closed_positions_columns = ['trade_id', 'confirm_date', 'active_date', 'trade_date', 'Completed Date', 'Target Price', 'Position Size', 'Direction', 'Open Price', 'Timeframe', 'Name', 'ind_PnL', 'winner', 'loss_reason', 'extreme_price', 'maxfib', 'extreme_price_date', 'max_position_drawdown', 'instance_id',
+    closed_positions_columns = ['trade_id', 'confirm_date', 'active_date', 'Completed Date', 'entry_date', 'exit_date', 'Target Price', 'Position Size', 'Direction', 'Open Price', 'Timeframe', 'Name', 'ind_PnL', 'winner', 'loss_reason', 'extreme_price', 'maxfib', 'extreme_price_date', 'max_position_drawdown', 'instance_id',
                               'tt_instance_id', 'tt_confirm_date', 'tt_active_date', 'tt_completed_date', 'tt_entry_price',
                               'ampd_p_value', 'ampd_t_value']  # Added AMPD values
     

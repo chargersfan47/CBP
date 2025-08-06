@@ -10,7 +10,7 @@ def calculate_current_positions(trades_file, end_date):
     with open(trades_file, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            trade_date = datetime.strptime(row['trade_date'], '%Y-%m-%d %H:%M:%S')
+            trade_date = datetime.strptime(row['entry_date'], '%Y-%m-%d %H:%M:%S')
             if trade_date <= end_date:
                 if row['order_type'] == 'open long':
                     current_longs += 1
@@ -32,7 +32,7 @@ def count_trades_by_month(trades_file, month):
     with open(trades_file, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            trade_date = datetime.strptime(row['trade_date'], '%Y-%m-%d %H:%M:%S')
+            trade_date = datetime.strptime(row['entry_date'], '%Y-%m-%d %H:%M:%S')
             if trade_date.strftime('%Y%m') == month:
                 total_trades += 1
                 if row['order_type'] == 'open long':
