@@ -1,6 +1,16 @@
 # Candle Breaks Project
 
+Come hang out in the Fib Lab Discord — questions, ideas, or feedback welcome:
+https://discord.gg/uY9vkJpZxb
+
 This project is, at least initially, a Backtesting Starter Kit for the Candle Breaks method.
+
+## What's New
+
+- Downloader script optimized; can now update historical data to current in ~15 seconds if run frequently.
+- New script `historical_instances_finder_updater.py` replaces the previous finder scripts; built with the same incremental approach as the downloader. It checks what instances already exist and scans candles from the last instance forward, adding only what’s new. It detects 1v1s and 1v1+1s, and will upgrade the last instance from the previous run to 1v1+1 if appropriate. It can also run in ~15 seconds if run frequently.
+- Minor tweaks to the simulator code, mostly fixing some bugs in dates shown in reports.
+- New Pine script `Pine Scripts/Candle Breaks 1v1 + 2v2 by oneofus2233.txt` handles both 1v1s and 2v2s. Thank you to @oneofus2233 for submitting! Note: alert functions were not tested; display works perfectly here. Based on the 1.2 version of the original script.
 
 ## Project Structure
 
@@ -90,13 +100,15 @@ The scripts in the Processing folder are used for fetching historical candle dat
    - The default list of custom TFs was provided by syndotc.  The intra-day TFs are all factors of 1440, or in other words, divide evenly into a day.  The multi-day TFs run up to 36D.  Also included are the 1W up to 6W, and the 1mo and 2mo.
    - This script will now optionally accept -p or --path as a command line argument, followed by a path to your folder where the 1m candle data is saved.
    
-### Step 3: Find 1v1 instances.  Run `historical_opps_finder_1v1.py`
-   - This script processes historical candle data to find instances of 1v1 candle breaks.
-   - It calculates some Fibonacci retrace levels for further analysis and saves the results to CSV files.
+### Step 3: Find 1v1 and 1v1+1 instances. Run `historical_instances_finder_updater.py`
+   - Scan historical candle data to identify 1v1 and 1v1+1 candle breaks and write them to instance CSVs.
+   - Computes Fibonacci retrace levels for further analysis and saves them with the instances.
+   - Reads what’s already in your files and adds new instances going forward; if the latest prior instance qualifies as 1v1+1, it will upgrade that entry.
+   - Recommended as the standard finder (supersedes the older 1v1 finder scripts).
 
-### (Optional) Step 4: Find XvY instances.  Run `historical_opps_finder_XvY.py`
-   - This script processes historical candle data to find instances of XvY candle breaks.
-   - It calculates some Fibonacci retrace levels for further analysis and saves the results to CSV files.
+### (Optional) Step 4: Find XvY instances. Run `historical_opps_finder_XvY.py`
+   - Process historical candle data to find XvY candle breaks.
+   - Computes Fibonacci retrace levels for further analysis and saves the results to CSV files.
 
 ### Step 5: Process instances.
 ####  Run `historical_process_status_of_instances.py`
